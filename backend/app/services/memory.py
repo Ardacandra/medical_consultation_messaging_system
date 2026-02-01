@@ -10,8 +10,8 @@ from datetime import datetime
 
 class ExtractedItem(BaseModel):
     value: str
-    category: str = Field(description="Must be 'medication' or 'symptom' or 'allergy'")
-    status: str = Field(description="active, past, or unknown")
+    category: str = Field(description="Must be 'medication', 'symptom', 'allergy', or 'chief_complaint'")
+    status: str = Field(description="active, past, stopped, or unknown")
 
 class ExtractionResult(BaseModel):
     items: List[ExtractedItem]
@@ -24,8 +24,12 @@ class MemoryService:
         self.llm = LLMFactory.create_llm(temperature=0.0) 
         self.parser = JsonOutputParser(pydantic_object=ExtractionResult)
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a medical scribe. Extract medications, symptoms, and allergies from the text.\n"
-                       "Normalize names (e.g., 'Advil' -> 'Ibuprofen').\n"
+            ("system", "You are a medical scribe that extracts structured medical facts.\n"
+                       "Extract medications, symptoms, allergies, and chief complaints.\n"
+                       "Rules:\n"
+                       "1. Normalize names (e.g., 'Advil' -> 'Ibuprofen').\n"
+                       "2. If a patient says they STOPPED a med or a symptom ENDED, you MUST extract it and set status to 'stopped' or 'past'.\n"
+                       "3. If a patient says they are taking a med, status is 'active'.\n"
                        "Output JSON matching the schema.\n"
                        "{format_instructions}"),
             ("user", "{message}")
@@ -34,16 +38,19 @@ class MemoryService:
 
     async def extract_and_update_memory(self, session: AsyncSession, patient_id: int, message_content: str, message_id: int):
         """
-        Extracts entities and updates PatientProfile.
+        Extracts entities and updates PatientProfile with proper mutation handling.
         """
         try:
+            print(f"DEBUG MEMORY: Processing msg {message_id} content: {message_content[:50]}...")
             result = await self.chain.ainvoke({
                 "message": message_content,
                 "format_instructions": self.parser.get_format_instructions()
             })
+            print(f"DEBUG MEMORY: Result: {result}")
             
             items = result.get("items", [])
             if not items:
+                print("DEBUG MEMORY: No items extracted.")
                 return
 
             # Fetch Profile
@@ -55,35 +62,53 @@ class MemoryService:
                 profile = PatientProfile(patient_id=patient_id)
                 session.add(profile)
             
-            # Helper to append uniques
-            def update_list(current_list, new_items):
-                current = current_list if current_list else []
-                # Simple dedup by value
-                existing_values = {i['value'].lower() for i in current}
+            # Mutation Helper
+            def upsert_items(current_list, new_items):
+                current = list(current_list) if current_list else []
+                utc_now = datetime.utcnow().isoformat()
                 
-                updated = list(current)
                 for item in new_items:
-                    if item['value'].lower() not in existing_values:
-                        updated.append({
-                            "value": item['value'], 
-                            "status": item['status'], 
-                            "source_msg_id": message_id
+                    # Find existing item (Case-insensitive match)
+                    found = False
+                    for existing in current:
+                        if existing['value'].lower() == item['value'].lower():
+                            # Update existing (Mutation)
+                            existing['status'] = item['status']
+                            existing['source_msg_id'] = message_id
+                            existing['updated_at'] = utc_now
+                            found = True
+                            break
+                    
+                    if not found:
+                        # Append new
+                        current.append({
+                            "value": item['value'],
+                            "status": item['status'],
+                            "source_msg_id": message_id,
+                            "updated_at": utc_now
                         })
-                return updated
+                return current
 
-            # Split by category
+            # Split by category and apply upsert
             new_meds = [i for i in items if i['category'] == 'medication']
             new_symptoms = [i for i in items if i['category'] == 'symptom']
             new_allergies = [i for i in items if i['category'] == 'allergy']
+            new_cc = [i for i in items if i['category'] == 'chief_complaint']
 
             if new_meds:
-                profile.medications = update_list(profile.medications, new_meds)
+                profile.medications = upsert_items(profile.medications, new_meds)
             if new_symptoms:
-                profile.symptoms = update_list(profile.symptoms, new_symptoms)
+                profile.symptoms = upsert_items(profile.symptoms, new_symptoms)
             if new_allergies:
-                profile.allergies = update_list(profile.allergies, new_allergies)
+                profile.allergies = upsert_items(profile.allergies, new_allergies)
+            if new_cc:
+                profile.chief_complaint = upsert_items(profile.chief_complaint, new_cc)
             
             profile.last_updated = datetime.utcnow()
+            
+            # Explicitly flag modified for SQLAlchemy JSON columns if needed, 
+            # though re-assignment usually handles it.
+            
             await session.commit()
             
         except Exception as e:

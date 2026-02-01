@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import PatientProfileSidebar from './PatientProfileSidebar';
 
 // Types
 interface Message {
@@ -99,95 +100,88 @@ const ChatInterface: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-[600px] w-full max-w-md border rounded-lg shadow-lg bg-white">
-            {/* Header */}
-            <div className="p-4 border-b bg-blue-50">
-                <h2 className="text-lg font-semibold text-blue-900">Nightingale Chat</h2>
-            </div>
+        <div className="flex w-full max-w-6xl h-[700px] bg-white rounded-lg shadow-xl overflow-hidden font-sans">
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col h-full relative">
+                <div className="p-4 border-b bg-white z-10 shadow-sm flex justify-between items-center">
+                    <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        Nightingale Chat
+                    </h2>
+                </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
-                {messages.map((msg, idx) => {
-                    const isPatient = msg.sender_type === 'patient';
-                    const isClinician = msg.sender_type === 'clinician';
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50">
+                    {messages.map((msg, idx) => {
+                        const isPatient = msg.sender_type === 'patient';
+                        const isClinician = msg.sender_type === 'clinician';
 
-                    return (
-                        <div
-                            key={idx}
-                            className={`flex w-full ${isPatient ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
-                        >
-                            <div className={`flex max-w-[80%] ${isPatient ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
-                                {/* Avatar/Icon placeholder could go here */}
-
-                                <div
-                                    className={`relative px-4 py-3 shadow-sm text-sm 
-                                        ${isPatient
-                                            ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm'
-                                            : isClinician
-                                                ? 'bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl rounded-bl-sm'
-                                                : 'bg-gray-200 text-gray-900 rounded-2xl rounded-bl-sm border border-gray-300'
-                                        }`}
+                        return (
+                            <div
+                                key={idx}
+                                className={`flex w-full ${isPatient ? 'justify-end' : 'justify-start'} animate-fade-in`}
+                            >
+                                <div className={`relative px-5 py-3 shadow-md text-sm max-w-[80%] leading-relaxed 
+                                    ${isPatient
+                                        ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm'
+                                        : isClinician
+                                            ? 'bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl rounded-bl-sm'
+                                            : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-sm'
+                                    }`}
                                 >
-                                    {/* Tail for Patient */}
-                                    {isPatient && (
-                                        <div className="absolute bottom-[0px] -right-[6px] w-0 h-0 
-                                            border-l-[12px] border-l-blue-600 outline-none
-                                            border-b-[12px] border-b-transparent 
-                                            transform -rotate-12 filter drop-shadow-sm pointer-events-none">
-                                        </div>
-                                    )}
+                                    {/* Tail */}
+                                    <div
+                                        className={`absolute bottom-0 w-3 h-3 
+                                            ${isPatient
+                                                ? '-right-1.5 bg-blue-600 [clip-path:polygon(0_0,0%_100%,100%_100%)]'
+                                                : '-left-1.5 [clip-path:polygon(100%_0,0%_100%,100%_100%)] ' + (isClinician ? 'bg-amber-50' : 'bg-white border-l border-gray-200') // Border on tail is tricky with clip-path, simplified
+                                            }`}
+                                    />
 
-                                    {/* Tail for Others */}
-                                    {!isPatient && (
-                                        <div className={`absolute bottom-[0px] -left-[6px] w-0 h-0 
-                                            border-r-[12px] outline-none
-                                            border-b-[12px] border-b-transparent 
-                                            transform rotate-12 filter drop-shadow-sm pointer-events-none
-                                            ${isClinician ? 'border-r-amber-50' : 'border-r-gray-200'}`}>
-                                        </div>
-                                    )}
-
+                                    {/* Badge for Clinician */}
                                     {isClinician && (
-                                        <div className="flex items-center gap-1 mb-1 text-amber-700/80">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider">Verified Nurse</span>
-                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                            </svg>
+                                        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-amber-200/50">
+                                            <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                                            <span className="text-xs font-bold uppercase tracking-wider text-amber-800">Verified Nurse</span>
                                         </div>
                                     )}
 
-                                    <div className="leading-relaxed">
-                                        {msg.content}
-                                    </div>
+                                    <p className="whitespace-pre-wrap relative z-10">{msg.content}</p>
 
-                                    <div className={`text-[10px] mt-1 text-right  ${isPatient ? 'text-blue-100' : 'text-gray-400'}`}>
+                                    <span className={`text-[10px] block mt-2 opacity-70 ${isPatient ? 'text-blue-100' : 'text-gray-400'} text-right`}>
                                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </div>
+                                    </span>
                                 </div>
                             </div>
-                        </div>
-                    );
-                })}
-                <div ref={messagesEndRef} />
+                        );
+                    })}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                <div className="p-4 bg-white border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                            placeholder="Type a message..."
+                            className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-6 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-gray-800 placeholder-gray-400 transition-all font-medium"
+                        />
+                        <button
+                            onClick={sendMessage}
+                            disabled={!input.trim()}
+                            className="bg-blue-600 text-white rounded-full p-3 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg active:scale-95"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 translate-x-0.5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            {/* Input */}
-            <div className="p-4 border-t bg-gray-50 flex gap-2">
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                    placeholder="Type your health concern..."
-                    className="flex-1 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-                <button
-                    onClick={sendMessage}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-                >
-                    Send
-                </button>
-            </div>
+            {/* Patient Profile Sidebar */}
+            <PatientProfileSidebar />
         </div>
     );
 };

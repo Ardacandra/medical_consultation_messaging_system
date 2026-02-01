@@ -50,6 +50,7 @@ class PatientProfile(Base):
     medications = Column(JSON, default=list) 
     symptoms = Column(JSON, default=list)
     allergies = Column(JSON, default=list)
+    chief_complaint = Column(JSON, default=list)
     
     last_updated = Column(DateTime, default=datetime.datetime.utcnow)
 

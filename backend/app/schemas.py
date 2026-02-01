@@ -36,3 +36,13 @@ class EscalationResponse(BaseModel):
     escalation_id: int
     conversation_id: int # Added this
     reason: str
+
+class PatientProfileResponse(BaseModel):
+    medications: List[Dict[str, Any]] = []
+    symptoms: List[Dict[str, Any]] = []
+    allergies: List[Dict[str, Any]] = []
+    chief_complaint: List[Dict[str, Any]] = []
+    last_updated: datetime
+
+    class Config:
+        from_attributes = True

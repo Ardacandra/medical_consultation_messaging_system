@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
 from app.db.models import Message, Escalation, PatientProfile, Conversation
-from app.schemas import MessageCreate, MessageResponse, EscalationResponse, RiskLevel
+from app.schemas import MessageCreate, MessageResponse, EscalationResponse, RiskLevel, PatientProfileResponse
 from app.services.redaction import RedactionService
 from app.services.risk import RiskAnalysisService
 from app.services.memory import MemoryService
@@ -152,3 +152,23 @@ async def get_history(
         .order_by(Message.timestamp.asc())
     )
     return result.scalars().all()
+
+@router.get("/patient/profile", response_model=PatientProfileResponse)
+async def get_patient_profile(
+    patient_id: int = 1, # Default to 1 for prototype
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the live patient profile (Living Memory).
+    """
+    result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
+    profile = result.scalars().first()
+    
+    if not profile:
+        # Return empty if not exists
+        return PatientProfileResponse(
+            medications=[], symptoms=[], allergies=[], chief_complaint=[], 
+            last_updated=datetime.utcnow()
+        )
+    
+    return profile

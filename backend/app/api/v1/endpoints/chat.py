@@ -99,6 +99,7 @@ async def chat_endpoint(
         return EscalationResponse(
             message="High risk detected. A nurse has been notified.",
             escalation_id=escalation.id,
+            conversation_id=msg_in.conversation_id,
             reason=risk_result.reason
         )
         
@@ -147,3 +148,18 @@ async def chat_endpoint(
     await db.refresh(bot_msg)
     
     return MessageResponse.model_validate(bot_msg)
+
+@router.get("/{conversation_id}/history", response_model=list[MessageResponse])
+async def get_history(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Fetch message history for polling.
+    """
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.timestamp.asc())
+    )
+    return result.scalars().all()

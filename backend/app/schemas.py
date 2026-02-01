@@ -30,4 +30,5 @@ class MessageResponse(BaseModel):
 class EscalationResponse(BaseModel):
     message: str
     escalation_id: int
+    conversation_id: int # Added this
     reason: str

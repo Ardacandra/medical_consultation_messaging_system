@@ -133,7 +133,7 @@ async def chat_endpoint(
     prof_result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
     profile = prof_result.scalars().first()
     
-    reply_text = await chat_service.generate_reply(history, profile, msg_in.content)
+    reply_text = await chat_service.generate_reply(msg_in.content, profile)
     
     bot_msg = Message(
         conversation_id=msg_in.conversation_id,

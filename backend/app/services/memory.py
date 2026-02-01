@@ -1,72 +1,91 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import PatientProfile
 from sqlalchemy import select
-import json
-import asyncio
+from app.db.models import PatientProfile
+from app.services.llm_factory import LLMFactory
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime
+
+class ExtractedItem(BaseModel):
+    value: str
+    category: str = Field(description="Must be 'medication' or 'symptom' or 'allergy'")
+    status: str = Field(description="active, past, or unknown")
+
+class ExtractionResult(BaseModel):
+    items: List[ExtractedItem]
 
 class MemoryService:
     """
-    Service to extract medical facts (meds, symptoms) from text and update PatientProfile.
+    Service to extract medical facts from messages using Gemini.
     """
+    def __init__(self):
+        self.llm = LLMFactory.create_llm(temperature=0.0) 
+        self.parser = JsonOutputParser(pydantic_object=ExtractionResult)
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a medical scribe. Extract medications, symptoms, and allergies from the text.\n"
+                       "Normalize names (e.g., 'Advil' -> 'Ibuprofen').\n"
+                       "Output JSON matching the schema.\n"
+                       "{format_instructions}"),
+            ("user", "{message}")
+        ])
+        self.chain = self.prompt | self.llm | self.parser
 
     async def extract_and_update_memory(self, session: AsyncSession, patient_id: int, message_content: str, message_id: int):
         """
-        Background task to extract facts and update the patient's living memory.
+        Extracts entities and updates PatientProfile.
         """
-        # Mock LLM Extraction Delay
-        await asyncio.sleep(1)
-        
-        # Mock Logic: Extract "Advil" or "Headache"
-        new_meds = []
-        new_symptoms = []
-        
-        content_lower = message_content.lower()
-        
-        if "advil" in content_lower:
-            new_meds.append({"value": "Advil", "status": "active", "source_msg_id": message_id})
-        if "ibuprofen" in content_lower:
-            new_meds.append({"value": "Ibuprofen", "status": "active", "source_msg_id": message_id})
+        try:
+            result = await self.chain.ainvoke({
+                "message": message_content,
+                "format_instructions": self.parser.get_format_instructions()
+            })
             
-        if "headache" in content_lower:
-            new_symptoms.append({"value": "Headache", "status": "active", "source_msg_id": message_id})
-        if "chest pain" in content_lower:
-             new_symptoms.append({"value": "Chest Pain", "status": "active", "source_msg_id": message_id})
+            items = result.get("items", [])
+            if not items:
+                return
 
-        if not new_meds and not new_symptoms:
-            return
-
-        # Update DB
-        # Fetch existing profile or create one
-        result = await session.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
-        profile = result.scalars().first()
-        
-        if not profile:
-            profile = PatientProfile(patient_id=patient_id)
-            session.add(profile)
-        
-        # Update JSON fields (simple append for now)
-        current_meds = profile.medications if profile.medications else []
-        current_symptoms = profile.symptoms if profile.symptoms else []
-        
-        # Avoid exact duplicates for this mock
-        for med in new_meds:
-            if med["value"] not in [m.get("value") for m in current_meds]:
-                current_meds.append(med)
-        
-        for sym in new_symptoms:
-            if sym["value"] not in [s.get("value") for s in current_symptoms]:
-                current_symptoms.append(sym)
+            # Fetch Profile
+            stmt = select(PatientProfile).where(PatientProfile.patient_id == patient_id)
+            db_result = await session.execute(stmt)
+            profile = db_result.scalars().first()
+            
+            if not profile:
+                profile = PatientProfile(patient_id=patient_id)
+                session.add(profile)
+            
+            # Helper to append uniques
+            def update_list(current_list, new_items):
+                current = current_list if current_list else []
+                # Simple dedup by value
+                existing_values = {i['value'].lower() for i in current}
                 
-        profile.medications = current_meds
-        profile.symptoms = current_symptoms
-        
-        # Commit happens in the caller or here? 
-        # Since this is a background task, we must handle the commit.
-        # But 'session' passed from a dependency might be closed if not handled carefully.
-        # Usually BackgroundTasks should ideally use a fresh session or be careful.
-        # For simplicity in this scaffold, we assume the session is managed by the caller framework 
-        # BUT FastAPI BackgroundTasks run *after* response, so the request session is usually closed.
-        # FIX: We should create a new session inside this method if it's a true background task, 
-        # or pass the ID and instantiate a session here.
-        
-        await session.commit()
+                updated = list(current)
+                for item in new_items:
+                    if item['value'].lower() not in existing_values:
+                        updated.append({
+                            "value": item['value'], 
+                            "status": item['status'], 
+                            "source_msg_id": message_id
+                        })
+                return updated
+
+            # Split by category
+            new_meds = [i for i in items if i['category'] == 'medication']
+            new_symptoms = [i for i in items if i['category'] == 'symptom']
+            new_allergies = [i for i in items if i['category'] == 'allergy']
+
+            if new_meds:
+                profile.medications = update_list(profile.medications, new_meds)
+            if new_symptoms:
+                profile.symptoms = update_list(profile.symptoms, new_symptoms)
+            if new_allergies:
+                profile.allergies = update_list(profile.allergies, new_allergies)
+            
+            profile.last_updated = datetime.utcnow()
+            await session.commit()
+            
+        except Exception as e:
+            print(f"Memory Extraction Failed: {e}")
+            # Non-critical 

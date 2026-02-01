@@ -9,17 +9,17 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100 p-8 font-sans">
       <header className="mb-8 flex justify-between items-center bg-white p-4 rounded shadow">
-        <h1 className="text-2xl font-bold text-gray-800">Nightingale Prototype</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Nightingale AI</h1>
         <div className="space-x-4">
           <button
             onClick={() => setView('patient')}
-            className={`px-4 py-2 rounded ${view === 'patient' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            className="px-4 py-2 rounded bg-blue-600 text-white"
           >
             Patient View
           </button>
           <button
             onClick={() => setView('clinician')}
-            className={`px-4 py-2 rounded ${view === 'clinician' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            className="px-4 py-2 rounded bg-blue-600 text-white"
           >
             Clinician View
           </button>

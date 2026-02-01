@@ -106,29 +106,68 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        className={`flex ${msg.sender_type === 'patient' ? 'justify-end' : 'justify-start'}`}
-                    >
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
+                {messages.map((msg, idx) => {
+                    const isPatient = msg.sender_type === 'patient';
+                    const isClinician = msg.sender_type === 'clinician';
+
+                    return (
                         <div
-                            className={`max-w-[80%] p-3 rounded-lg text-sm ${msg.sender_type === 'patient'
-                                    ? 'bg-blue-600 text-white rounded-br-none'
-                                    : msg.sender_type === 'clinician'
-                                        ? 'bg-yellow-50 border-2 border-yellow-400 text-gray-800 rounded-bl-none shadow-sm'
-                                        : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                                }`}
+                            key={idx}
+                            className={`flex w-full ${isPatient ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
                         >
-                            {msg.sender_type === 'clinician' && (
-                                <div className="text-xs font-bold text-yellow-700 mb-1 uppercase tracking-wider">
-                                    Verified Nurse
+                            <div className={`flex max-w-[80%] ${isPatient ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                                {/* Avatar/Icon placeholder could go here */}
+
+                                <div
+                                    className={`relative px-4 py-3 shadow-sm text-sm 
+                                        ${isPatient
+                                            ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm'
+                                            : isClinician
+                                                ? 'bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl rounded-bl-sm'
+                                                : 'bg-gray-200 text-gray-900 rounded-2xl rounded-bl-sm border border-gray-300'
+                                        }`}
+                                >
+                                    {/* Tail for Patient */}
+                                    {isPatient && (
+                                        <div className="absolute bottom-[0px] -right-[6px] w-0 h-0 
+                                            border-l-[12px] border-l-blue-600 outline-none
+                                            border-b-[12px] border-b-transparent 
+                                            transform -rotate-12 filter drop-shadow-sm pointer-events-none">
+                                        </div>
+                                    )}
+
+                                    {/* Tail for Others */}
+                                    {!isPatient && (
+                                        <div className={`absolute bottom-[0px] -left-[6px] w-0 h-0 
+                                            border-r-[12px] outline-none
+                                            border-b-[12px] border-b-transparent 
+                                            transform rotate-12 filter drop-shadow-sm pointer-events-none
+                                            ${isClinician ? 'border-r-amber-50' : 'border-r-gray-200'}`}>
+                                        </div>
+                                    )}
+
+                                    {isClinician && (
+                                        <div className="flex items-center gap-1 mb-1 text-amber-700/80">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider">Verified Nurse</span>
+                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                            </svg>
+                                        </div>
+                                    )}
+
+                                    <div className="leading-relaxed">
+                                        {msg.content}
+                                    </div>
+
+                                    <div className={`text-[10px] mt-1 text-right  ${isPatient ? 'text-blue-100' : 'text-gray-400'}`}>
+                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
                                 </div>
-                            )}
-                            {msg.content}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
                 <div ref={messagesEndRef} />
             </div>
 
@@ -140,7 +179,7 @@ const ChatInterface: React.FC = () => {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                     placeholder="Type your health concern..."
-                    className="flex-1 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 />
                 <button
                     onClick={sendMessage}

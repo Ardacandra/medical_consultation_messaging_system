@@ -5,9 +5,9 @@ import datetime
 from app.db.database import Base
 
 class RiskLevel(enum.Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
 
 class User(Base):
     __tablename__ = "users"

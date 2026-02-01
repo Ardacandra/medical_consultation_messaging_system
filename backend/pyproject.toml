@@ -3,6 +3,7 @@ name = "nightingale-backend"
 version = "0.1.0"
 description = "Secure, risk-gated healthcare messenger backend"
 authors = ["Admin <admin@nightingale.com>"]
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.10"

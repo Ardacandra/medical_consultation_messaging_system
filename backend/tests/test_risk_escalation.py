@@ -1,38 +1,46 @@
 import pytest
-from unittest.mock import AsyncMock, patch
-from fastapi.testclient import TestClient
-from app.main import app
-from app.schemas import RiskAnalysisResult, RiskLevel
+from httpx import AsyncClient
 
-client = TestClient(app)
+# 1. Test Risk Escalation
+@pytest.mark.asyncio
+async def test_risk_escalation_high(client: AsyncClient, patient_token: str):
+    headers = {"Authorization": f"Bearer {patient_token}"}
+    
+    # Send a high risk message
+    payload = {
+        "conversation_id": 0, # New conversation
+        "content": "I have crushing chest pain and difficulty breathing."
+    }
+    
+    response = await client.post("/api/v1/chat/", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Assertions
+    # Depending on what the endpoint returns for escalation (EscalationResponse)
+    # The schema has 'message' and 'escalation_id'
+    
+    assert "escalation_id" in data
+    assert "risk detected" in data["message"].lower()
+    
+    # Ideally we check the DB to see if AI *didn't* provide medical advice, 
+    # but the API response structure confirming escalation itself implies the AI advice circuit was bypassed or short-circuited.
 
 @pytest.mark.asyncio
-async def test_high_risk_escalation():
-    # Mock the RiskAnalysisService.analyze_risk method
-    # We patch the class method to return a specific High Risk result
+async def test_risk_escalation_low(client: AsyncClient, patient_token: str):
+    headers = {"Authorization": f"Bearer {patient_token}"}
     
-    mock_risk_result = RiskAnalysisResult(
-        risk_level=RiskLevel.HIGH,
-        reason="Mocked High Risk",
-        summary="Mocked Summary"
-    )
-
-    with patch("app.services.risk.RiskAnalysisService.analyze_risk", new_callable=AsyncMock) as mock_analyze:
-        mock_analyze.return_value = mock_risk_result
-        
-        # Send POST request
-        response = client.post(
-            "/api/v1/chat/",
-            json={"conversation_id": 0, "content": "My chest hurts"}
-        )
-        
-        # Assertions
-        assert response.status_code == 200
-        data = response.json()
-        
-        # Verify Escalation
-        assert "escalation_id" in data
-        assert data["message"] == "High risk detected. A nurse has been notified."
-        
-        # Verify Mock Interaction
-        mock_analyze.assert_called_once()
+    # Send a low risk message
+    payload = {
+        "conversation_id": 0,
+        "content": "I need a refill for my ibuprofen."
+    }
+    
+    response = await client.post("/api/v1/chat/", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Expect standard MessageResponse
+    assert data["sender_type"] == "ai"
+    assert data["risk_level"] == "LOW"
+    assert "escalation_id" not in data

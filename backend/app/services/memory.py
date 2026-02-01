@@ -41,16 +41,13 @@ class MemoryService:
         Extracts entities and updates PatientProfile with proper mutation handling.
         """
         try:
-            print(f"DEBUG MEMORY: Processing msg {message_id} content: {message_content[:50]}...")
             result = await self.chain.ainvoke({
                 "message": message_content,
                 "format_instructions": self.parser.get_format_instructions()
             })
-            print(f"DEBUG MEMORY: Result: {result}")
             
             items = result.get("items", [])
             if not items:
-                print("DEBUG MEMORY: No items extracted.")
                 return
 
             # Fetch Profile
@@ -63,15 +60,20 @@ class MemoryService:
                 session.add(profile)
             
             # Mutation Helper
+            import copy
             def upsert_items(current_list, new_items):
-                current = list(current_list) if current_list else []
+                # FORCE DEEP COPY to ensure SQLAlchemy detects change upon reassignment
+                # If we modify in place, and the object identity doesn't change enough, 
+                # or if the reference is shared weirdly, it might fail.
+                # Safest: Create a completely new list of dicts.
+                current = copy.deepcopy(list(current_list)) if current_list else []
                 utc_now = datetime.utcnow().isoformat()
                 
                 for item in new_items:
                     # Find existing item (Case-insensitive match)
                     found = False
                     for existing in current:
-                        if existing['value'].lower() == item['value'].lower():
+                        if existing.get('value', '').lower() == item['value'].lower():
                             # Update existing (Mutation)
                             existing['status'] = item['status']
                             existing['source_msg_id'] = message_id
@@ -87,6 +89,8 @@ class MemoryService:
                             "source_msg_id": message_id,
                             "updated_at": utc_now
                         })
+                
+                # Flag modified just in case (though assignment should do it)
                 return current
 
             # Split by category and apply upsert

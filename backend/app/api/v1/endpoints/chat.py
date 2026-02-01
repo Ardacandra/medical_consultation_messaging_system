@@ -154,16 +154,26 @@ async def chat_endpoint(
 @router.get("/{conversation_id}/history", response_model=list[MessageResponse])
 async def get_history(
     conversation_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Fetch message history for polling.
     """
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.timestamp.asc())
-    )
+    # Security: Verify Conversation Ownership
+    query_conv = select(Conversation).where(Conversation.id == conversation_id)
+    result_conv = await db.execute(query_conv)
+    conversation = result_conv.scalars().first()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+        
+    if conversation.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this conversation")
+
+    # Fetch Messages
+    query = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.timestamp.asc())
+    result = await db.execute(query)
     return result.scalars().all()
 
 @router.get("/patient/profile", response_model=PatientProfileResponse)
@@ -185,3 +195,20 @@ async def get_patient_profile(
         )
     
     return profile
+
+@router.delete("/patient/profile", status_code=204)
+async def delete_patient_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Clear the patient profile. Useful for testing or reset.
+    """
+    result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == current_user.id))
+    profile = result.scalars().first()
+    
+    if profile:
+        await db.delete(profile)
+        await db.commit()
+    
+    return

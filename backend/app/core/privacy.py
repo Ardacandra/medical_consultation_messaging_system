@@ -3,10 +3,12 @@ from typing import Dict, Any
 
 # Simple regex-based patterns for prototype
 PATTERNS = {
-    "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-    "phone": r'\b(\+\d{1,2}\s?)?1?\-?\.?\s?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b',
+    "nric": r"[STFG]\d{7}[A-Z]",
+    "phone": r"(\+?65)?[ -]?\d{4}[ -]?\d{4}",
+    "email": r"[\w\.-]+@[\w\.-]+\.\w+",
+    "name": r"(?<=My name is )[A-Z][a-z]+ [A-Z][a-z]+", # Simple heuristic for "My name is X Y"
     "ssn": r'\b\d{3}-\d{2}-\d{4}\b',
-    "id_generic": r'\bID\d{5,}\b' 
+    "id_generic": r'\bID\d{5,}\b'
 }
 
 def redact_pii(text: str) -> str:

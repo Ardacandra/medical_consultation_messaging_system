@@ -29,12 +29,23 @@ async def startup():
         except Exception as e:
             print(f"Migration Note (chief_complaint): {e}")
 
-        # Auto-Migration for escalation snapshot
+    # Auto-Migration for escalation snapshot
         try:
             await conn.execute(text("ALTER TABLE escalations ADD COLUMN IF NOT EXISTS patient_profile_snapshot JSON"))
-            print("Migration Success: Added patient_profile_snapshot column")
         except Exception as e:
             print(f"Migration Note (snapshot): {e}")
+
+        # Auto-Migration: Users & Voice
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'patient'"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS clinic_id VARCHAR"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_transcript_id VARCHAR"))
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_url VARCHAR"))
+            print("Migration Success: Added User & Voice columns")
+        except Exception as e:
+            print(f"Migration Note (Auth/Voice): {e}")
     
     # Seed default user
     async with SessionLocal() as session:
@@ -42,9 +53,26 @@ async def startup():
         user = result.scalars().first()
         if not user:
             print("Seeding default user...")
-            default_user = User(id=1, username="patient_zero", email="patient@example.com")
+            from app.core.security import get_password_hash
+            default_user = User(
+                id=1, 
+                email="patient@example.com", 
+                hashed_password=get_password_hash("password"),
+                role="patient",
+                is_active=True
+            )
             session.add(default_user)
             await session.commit()
+        else:
+            # Backfill password if missing (prototype fix)
+            if not user.hashed_password:
+                print("Backfilling password for default user...")
+                from app.core.security import get_password_hash
+                user.hashed_password = get_password_hash("password")
+                user.role = "patient"
+                user.is_active = True
+                await session.commit()
+
 
 @app.get("/")
 def read_root():

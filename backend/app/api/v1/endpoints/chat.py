@@ -2,18 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
-from app.db.models import Message, Escalation, PatientProfile, Conversation
+from app.db.models import Message, Escalation, PatientProfile, Conversation, User
 from app.schemas import MessageCreate, MessageResponse, EscalationResponse, RiskLevel, PatientProfileResponse
-from app.services.redaction import RedactionService
+# from app.services.redaction import RedactionService # Deprecated in favor of core.privacy
+from app.core.privacy import redact_pii, structured_log
 from app.services.risk import RiskAnalysisService
 from app.services.memory import MemoryService
 from app.services.chat import ChatService
+from app.api.deps import get_current_user
 from datetime import datetime
 
 router = APIRouter()
 
-# Instantiate Services (Dependency Injection could be better but simple init for now)
-redaction_service = RedactionService()
+# Instantiate Services
 risk_service = RiskAnalysisService()
 memory_service = MemoryService()
 chat_service = ChatService()
@@ -22,7 +23,8 @@ chat_service = ChatService()
 async def chat_endpoint(
     msg_in: MessageCreate, 
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Main Chat Interface.
@@ -32,26 +34,25 @@ async def chat_endpoint(
     # 0. Validate Conversation
     result = await db.execute(select(Conversation).where(Conversation.id == msg_in.conversation_id))
     conversation = result.scalars().first()
+    
     if not conversation:
-        # Create one if missing for demo purposes, or 404
-        # For scaffolding simplicity, let's create it if it doesn't exist? 
-        # Better to error if ID provided but not found.
-        # But schema asks for ID. Let's assume client has an ID or we accept 0/None to create new?
-        # User prompt implies "MessageCreate" has ID. Let's fail if not found.
-        # Actually for testing ease, let's auto-create if ID is 0.
+        # Auto-create if ID is 0, assigning to current_user
         if msg_in.conversation_id == 0:
-            conversation = Conversation(user_id=1) # Default user 1
+            conversation = Conversation(user_id=current_user.id)
             db.add(conversation)
             await db.commit()
             await db.refresh(conversation)
             msg_in.conversation_id = conversation.id
         else:
             raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Verify Ownership
+    if conversation.user_id != current_user.id:
+         raise HTTPException(status_code=403, detail="Not authorized to access this conversation")
 
-    # Step A: Redaction
-    # Redact PII for specific logs/purposes if needed, but we store RAW content encrypted (simulated) 
-    # and REDACTED content for safety.
-    content_redacted = redaction_service.redact_pii(msg_in.content)
+    # Step A: Redaction & Logging
+    structured_log("Message Received", {"user_id": current_user.id, "conversation_id": conversation.id})
+    content_redacted = redact_pii(msg_in.content)
     
     # Save User Message
     user_msg = Message(
@@ -76,7 +77,7 @@ async def chat_endpoint(
     history = hist_result.scalars().all() # Reversed order usually
     
     # Step B: Risk Analysis
-    risk_result = await risk_service.analyze_risk(history, msg_in.content)
+    risk_result = await risk_service.analyze_risk(history, content_redacted)
     
     # Update User Message with Risk Metadata
     user_msg.risk_level = risk_result.risk_level
@@ -117,14 +118,14 @@ async def chat_endpoint(
         
     # Step C: Memory Extraction (Background)
     patient_id = conversation.user_id if conversation.user_id else 1
-    background_tasks.add_task(memory_service.extract_and_update_memory, db, patient_id, msg_in.content, user_msg.id)
+    background_tasks.add_task(memory_service.extract_and_update_memory, db, patient_id, content_redacted, user_msg.id)
 
     # Step D: Chat Reply
     # Get Profile
     prof_result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
     profile = prof_result.scalars().first()
     
-    chat_response = await chat_service.generate_reply(msg_in.content, profile)
+    chat_response = await chat_service.generate_reply(content_redacted, profile)
     
     # Map confidence string to score for DB storage (backward compatibility)
     conf_map = {"High": 90, "Medium": 50, "Low": 10}
@@ -134,7 +135,7 @@ async def chat_endpoint(
         conversation_id=msg_in.conversation_id,
         sender_type="ai",
         content=chat_response.content,
-        content_redacted=redaction_service.redact_pii(chat_response.content),
+        content_redacted=redact_pii(chat_response.content),
         risk_level=RiskLevel.LOW,
         confidence_score=db_score,
         timestamp=datetime.utcnow()
@@ -167,13 +168,13 @@ async def get_history(
 
 @router.get("/patient/profile", response_model=PatientProfileResponse)
 async def get_patient_profile(
-    patient_id: int = 1, # Default to 1 for prototype
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get the live patient profile (Living Memory).
     """
-    result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
+    result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == current_user.id))
     profile = result.scalars().first()
     
     if not profile:

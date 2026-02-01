@@ -9,7 +9,11 @@ interface Message {
     timestamp: string;
 }
 
-const ChatInterface: React.FC = () => {
+interface ChatInterfaceProps {
+    token: string;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [conversationId, setConversationId] = useState<number>(0);
@@ -21,7 +25,9 @@ const ChatInterface: React.FC = () => {
 
         const fetchMessages = async () => {
             try {
-                const res = await fetch(`/api/v1/chat/${conversationId}/history`);
+                const res = await fetch(`/api/v1/chat/${conversationId}/history`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     // Simple state update - in prod use better diffing
@@ -33,7 +39,7 @@ const ChatInterface: React.FC = () => {
         fetchMessages();
         const interval = setInterval(fetchMessages, 3000);
         return () => clearInterval(interval);
-    }, [conversationId]);
+    }, [conversationId, token]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,7 +55,10 @@ const ChatInterface: React.FC = () => {
         try {
             const response = await fetch('/api/v1/chat/', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     conversation_id: conversationId,
                     content: input
@@ -181,7 +190,7 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Patient Profile Sidebar */}
-            <PatientProfileSidebar />
+            <PatientProfileSidebar token={token} />
         </div>
     );
 };

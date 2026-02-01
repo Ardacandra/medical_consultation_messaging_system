@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.db.database import get_db
-from app.db.models import Escalation, Message, RiskLevel
+from app.db.models import Escalation, Message, RiskLevel, User, Conversation
 from app.schemas import MessageResponse, EscalationResponse
+from app.api.deps import get_current_clinician
+from app.core.privacy import redact_pii
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -28,14 +30,22 @@ class ReplyPayload(BaseModel):
 @router.get("/", response_model=List[EscalationListResponse])
 async def list_escalations(
     status: Optional[str] = "pending",
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_clinician: User = Depends(get_current_clinician)
 ):
     """
     List escalations. Defaults to pending.
+    Enforces Clinic Scope: Clinicians only see escalations for patients in their clinic.
     """
     query = select(Escalation)
     if status:
         query = query.where(Escalation.status == status)
+    
+    # Enforce Clinic Scope
+    if current_clinician.clinic_id:
+        query = query.join(Conversation, Escalation.conversation_id == Conversation.id)\
+                     .join(User, Conversation.user_id == User.id)\
+                     .where(User.clinic_id == current_clinician.clinic_id)
     
     result = await db.execute(query)
     escalations = result.scalars().all()
@@ -45,7 +55,8 @@ async def list_escalations(
 async def reply_to_escalation(
     escalation_id: int,
     payload: ReplyPayload,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_clinician: User = Depends(get_current_clinician)
 ):
     """
     Clinician replies to an escalation.
@@ -53,21 +64,21 @@ async def reply_to_escalation(
     2. Mark escalation as 'resolved'.
     """
     # 1. Fetch Escalation
-    result = await db.execute(select(Escalation).where(Escalation.id == escalation_id))
+    query = select(Escalation).where(Escalation.id == escalation_id)
+    
+    # Enforce Clinic Scope
+    if current_clinician.clinic_id:
+        query = query.join(Conversation, Escalation.conversation_id == Conversation.id)\
+                     .join(User, Conversation.user_id == User.id)\
+                     .where(User.clinic_id == current_clinician.clinic_id)
+
+    result = await db.execute(query)
     escalation = result.scalars().first()
     if not escalation:
-        raise HTTPException(status_code=404, detail="Escalation not found")
+        raise HTTPException(status_code=404, detail="Escalation not found or access denied")
     
     # 2. Create Message
-    # Note: We need a simpler redaction here or reuse service. 
-    # For now, simplistic approach: assume clinician data is safe? 
-    # Or should we redact clinician messages too? Probably yes for uniformity.
-    # We will instantiate RedactionService simpler here or just do identity for speed if not injected.
-    # Let's import RedactionService.
-    from app.services.redaction import RedactionService
-    redactor = RedactionService()
-    
-    content_redacted = redactor.redact_pii(payload.content)
+    content_redacted = redact_pii(payload.content)
     
     clinician_msg = Message(
         conversation_id=escalation.conversation_id,

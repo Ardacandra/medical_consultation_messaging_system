@@ -15,13 +15,19 @@ interface PatientProfile {
     last_updated: string;
 }
 
-const PatientProfileSidebar = () => {
+interface PatientProfileSidebarProps {
+    token: string;
+}
+
+const PatientProfileSidebar: React.FC<PatientProfileSidebarProps> = ({ token }) => {
     const [profile, setProfile] = useState<PatientProfile | null>(null);
 
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const response = await fetch('http://localhost:8000/api/v1/chat/patient/profile');
+                const response = await fetch('/api/v1/chat/patient/profile', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
                 if (response.ok) {
                     const data = await response.json();
                     setProfile(data);
@@ -35,7 +41,7 @@ const PatientProfileSidebar = () => {
         // Poll every 3 seconds for live updates
         const interval = setInterval(fetchProfile, 3000);
         return () => clearInterval(interval);
-    }, []);
+    }, [token]);
 
     if (!profile) return <div className="p-4 text-gray-500">Loading Profile...</div>;
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, JSON, Boolean
 from sqlalchemy.orm import relationship
 import enum
 import datetime
@@ -12,9 +12,11 @@ class RiskLevel(enum.Enum):
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, default="patient") # patient, clinician
+    is_active = Column(Boolean, default=True)
+    clinic_id = Column(String, nullable=True) # For RBAC scoping
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -36,7 +38,15 @@ class Message(Base):
     risk_reason = Column(String, nullable=True)
     confidence_score = Column(Integer, nullable=True) # 0-100
     
+    # Voice Readiness
+    audio_transcript_id = Column(String, nullable=True) # ID from voice provider
+    audio_url = Column(String, nullable=True) # S3/Blob URL
+
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    conversation = relationship("Conversation", back_populates="messages")
+
+Conversation.messages = relationship("Message", back_populates="conversation")
 
 class PatientProfile(Base):
     """The 'Living Memory' - updates live"""

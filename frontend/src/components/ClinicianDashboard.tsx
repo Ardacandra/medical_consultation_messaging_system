@@ -16,14 +16,20 @@ interface Escalation {
     patient_profile_snapshot?: Snapshot;
 }
 
-const ClinicianDashboard: React.FC = () => {
+interface ClinicianDashboardProps {
+    token: string;
+}
+
+const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
     const [escalations, setEscalations] = useState<Escalation[]>([]);
     const [replyingTo, setReplyingTo] = useState<number | null>(null);
     const [replyContent, setReplyContent] = useState('');
 
     const fetchEscalations = React.useCallback(async () => {
         try {
-            const res = await fetch('/api/v1/escalations/');
+            const res = await fetch('/api/v1/escalations/', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setEscalations(data);
@@ -38,7 +44,7 @@ const ClinicianDashboard: React.FC = () => {
         fetchEscalations();
         const interval = setInterval(fetchEscalations, 5000);
         return () => clearInterval(interval);
-    }, [fetchEscalations]);
+    }, [fetchEscalations, token]);
 
     const sendReply = async (id: number) => {
         if (!replyContent) return;
@@ -46,7 +52,10 @@ const ClinicianDashboard: React.FC = () => {
         try {
             const res = await fetch(`/api/v1/escalations/${id}/reply`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ content: replyContent })
             });
 

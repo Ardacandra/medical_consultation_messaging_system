@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 
+interface Medication { value: string; }
+interface Symptom { value: string; }
+interface Snapshot {
+    medications?: Medication[];
+    symptoms?: Symptom[];
+}
+
 interface Escalation {
     id: number;
     conversation_id: number;
     trigger_message_id: number;
     status: string;
     triage_summary: string;
+    patient_profile_snapshot?: Snapshot;
 }
 
 const ClinicianDashboard: React.FC = () => {
@@ -13,7 +21,7 @@ const ClinicianDashboard: React.FC = () => {
     const [replyingTo, setReplyingTo] = useState<number | null>(null);
     const [replyContent, setReplyContent] = useState('');
 
-    const fetchEscalations = async () => {
+    const fetchEscalations = React.useCallback(async () => {
         try {
             const res = await fetch('/api/v1/escalations/');
             if (res.ok) {
@@ -23,13 +31,14 @@ const ClinicianDashboard: React.FC = () => {
         } catch (e) {
             console.error("Failed to fetch escalations", e);
         }
-    };
+    }, []);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchEscalations();
         const interval = setInterval(fetchEscalations, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchEscalations]);
 
     const sendReply = async (id: number) => {
         if (!replyContent) return;
@@ -52,8 +61,20 @@ const ClinicianDashboard: React.FC = () => {
         }
     };
 
+    const renderSnapshot = (snapshot: Snapshot | undefined) => {
+        if (!snapshot || !snapshot.medications) return <span className="text-gray-400 italic">No snapshot</span>;
+        const meds = snapshot.medications.map((m) => m.value).join(", ");
+        const symptoms = snapshot.symptoms ? snapshot.symptoms.map((s) => s.value).join(", ") : "";
+        return (
+            <div className="text-xs text-gray-500 mt-1">
+                <p><strong>Meds:</strong> {meds || 'None'}</p>
+                <p><strong>Symp:</strong> {symptoms || 'None'}</p>
+            </div>
+        );
+    };
+
     return (
-        <div className="w-full max-w-4xl p-6 bg-white shadow-md rounded-lg">
+        <div className="w-full max-w-6xl p-6 bg-white shadow-md rounded-lg">
             <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Clinician Dashboard</h2>
 
             <div className="overflow-x-auto">
@@ -61,7 +82,7 @@ const ClinicianDashboard: React.FC = () => {
                     <thead>
                         <tr className="bg-gray-100 text-gray-600 uppercase text-sm leading-normal">
                             <th className="py-3 px-6 text-left">ID</th>
-                            <th className="py-3 px-6 text-left">Reason</th>
+                            <th className="py-3 px-6 text-left">Reason & Snapshot</th>
                             <th className="py-3 px-6 text-left">Status</th>
                             <th className="py-3 px-6 text-center">Action</th>
                         </tr>
@@ -72,9 +93,12 @@ const ClinicianDashboard: React.FC = () => {
                         ) : escalations.map(esc => (
                             <tr key={esc.id} className="border-b border-gray-200 hover:bg-gray-50">
                                 <td className="py-3 px-6 text-left whitespace-nowrap font-medium">{esc.id}</td>
-                                <td className="py-3 px-6 text-left text-red-600 font-semibold">{esc.triage_summary}</td>
                                 <td className="py-3 px-6 text-left">
-                                    <span className="bg-yellow-200 text-yellow-800 py-1 px-3 rounded-full text-xs">
+                                    <div className="text-red-600 font-semibold">{esc.triage_summary}</div>
+                                    {renderSnapshot(esc.patient_profile_snapshot)}
+                                </td>
+                                <td className="py-3 px-6 text-left">
+                                    <span className={`py-1 px-3 rounded-full text-xs ${esc.status === 'resolved' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800'}`}>
                                         {esc.status}
                                     </span>
                                 </td>
@@ -105,7 +129,8 @@ const ClinicianDashboard: React.FC = () => {
                                     ) : (
                                         <button
                                             onClick={() => setReplyingTo(esc.id)}
-                                            className="bg-blue-500 text-white py-1 px-3 rounded text-xs hover:bg-blue-600"
+                                            disabled={esc.status === 'resolved'}
+                                            className={`py-1 px-3 rounded text-xs ${esc.status === 'resolved' ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
                                         >
                                             Reply
                                         </button>

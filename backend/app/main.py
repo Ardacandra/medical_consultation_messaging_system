@@ -26,10 +26,15 @@ async def startup():
         # Auto-Migration for chief_complaint
         try:
             await conn.execute(text("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS chief_complaint JSON DEFAULT '[]'::json"))
-            print("Migration Success: Added chief_complaint column")
         except Exception as e:
-            # Ignore if column exists or other non-critical error for prototype
-            print(f"Migration Note: {e}")
+            print(f"Migration Note (chief_complaint): {e}")
+
+        # Auto-Migration for escalation snapshot
+        try:
+            await conn.execute(text("ALTER TABLE escalations ADD COLUMN IF NOT EXISTS patient_profile_snapshot JSON"))
+            print("Migration Success: Added patient_profile_snapshot column")
+        except Exception as e:
+            print(f"Migration Note (snapshot): {e}")
     
     # Seed default user
     async with SessionLocal() as session:

@@ -16,6 +16,7 @@ class EscalationListResponse(BaseModel):
     trigger_message_id: int
     status: str
     triage_summary: str
+    patient_profile_snapshot: Optional[dict] = {}
     created_at: Optional[str] = None # Helper
 
     class Config:

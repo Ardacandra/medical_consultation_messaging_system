@@ -18,19 +18,19 @@ interface PatientProfile {
 const PatientProfileSidebar = () => {
     const [profile, setProfile] = useState<PatientProfile | null>(null);
 
-    const fetchProfile = async () => {
-        try {
-            const response = await fetch('http://localhost:8000/api/v1/chat/patient/profile');
-            if (response.ok) {
-                const data = await response.json();
-                setProfile(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch profile", error);
-        }
-    };
-
     useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/chat/patient/profile');
+                if (response.ok) {
+                    const data = await response.json();
+                    setProfile(data);
+                }
+            } catch (error) {
+                console.error("Failed to fetch profile", error);
+            }
+        };
+
         fetchProfile();
         // Poll every 3 seconds for live updates
         const interval = setInterval(fetchProfile, 3000);
@@ -53,7 +53,7 @@ const PatientProfileSidebar = () => {
                                 <span className="text-xs text-gray-500">Updated: {new Date(item.updated_at).toLocaleTimeString()}</span>
                             </div>
                             <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${item.status === 'active' ? 'bg-green-100 text-green-800' :
-                                    item.status === 'past' || item.status === 'stopped' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                                item.status === 'past' || item.status === 'stopped' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
                                 }`}>
                                 {item.status}
                             </span>

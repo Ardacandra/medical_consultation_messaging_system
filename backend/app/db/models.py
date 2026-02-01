@@ -62,3 +62,4 @@ class Escalation(Base):
     trigger_message_id = Column(Integer, ForeignKey("messages.id"))
     status = Column(String, default="pending") # pending, resolved
     triage_summary = Column(String) # 3-5 bullet points
+    patient_profile_snapshot = Column(JSON, nullable=True) # Snapshot at time of escalation

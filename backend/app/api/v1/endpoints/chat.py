@@ -85,12 +85,24 @@ async def chat_endpoint(
     
     # If HIGH or MEDIUM RISK -> Stop
     if risk_result.risk_level in [RiskLevel.HIGH, RiskLevel.MEDIUM]:
+        # Fetch Profile for Snapshot
+        patient_id = conversation.user_id if conversation.user_id else 1
+        prof_result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
+        profile = prof_result.scalars().first()
+        
+        # Serialize Profile
+        profile_snapshot = {}
+        if profile:
+            from fastapi.encoders import jsonable_encoder
+            profile_snapshot = jsonable_encoder(PatientProfileResponse.model_validate(profile))
+
         # Create Escalation
         escalation = Escalation(
             conversation_id=msg_in.conversation_id,
             trigger_message_id=user_msg.id,
             status="pending",
-            triage_summary=risk_result.summary or f"{risk_result.risk_level} risk detected via automated analysis."
+            triage_summary=risk_result.summary or f"{risk_result.risk_level} risk detected via automated analysis.",
+            patient_profile_snapshot=profile_snapshot
         )
         db.add(escalation)
         await db.commit()

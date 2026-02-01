@@ -83,49 +83,28 @@ async def chat_endpoint(
     user_msg.risk_reason = risk_result.reason
     await db.commit()
     
-    # If HIGH RISK -> Stop
-    if risk_result.risk_level == RiskLevel.HIGH:
+    # If HIGH or MEDIUM RISK -> Stop
+    if risk_result.risk_level in [RiskLevel.HIGH, RiskLevel.MEDIUM]:
         # Create Escalation
         escalation = Escalation(
             conversation_id=msg_in.conversation_id,
             trigger_message_id=user_msg.id,
             status="pending",
-            triage_summary=risk_result.summary or "High risk detected via automated analysis."
+            triage_summary=risk_result.summary or f"{risk_result.risk_level} risk detected via automated analysis."
         )
         db.add(escalation)
         await db.commit()
         await db.refresh(escalation)
         
         return EscalationResponse(
-            message="High risk detected. A nurse has been notified.",
+            message=f"{risk_result.risk_level} risk detected. A nurse has been notified.",
             escalation_id=escalation.id,
             conversation_id=msg_in.conversation_id,
             reason=risk_result.reason
         )
         
     # Step C: Memory Extraction (Background)
-    # Get Patient ID from conversation -> user
-    # Simplified: Assume user_id 1 for this scaffold
     patient_id = conversation.user_id if conversation.user_id else 1
-    
-    # Add background task
-    # Note: Passing 'db' to background task is risky as it might close. 
-    # Best practice: Background task opens its own session.
-    # We will pass the DB wrapper/generator or ID to the service methods to handle their own sessions
-    # But for this Mock Service which expects session, we might hit an issue.
-    # To fix properly: pass session factory or handle inside.
-    # For now, let's run it await-style inside here if it's fast (Mock is fast), 
-    # OR assume we accept the trade-off for scaffolding. 
-    # Actually, MemoryService.extract_and_update_memory accepts 'session'.
-    # We will invoke it directly here for simplicity (Sequential) OR wrap it.
-    # 'BackgroundTasks' is requested in prompt.
-    # Let's Skip BackgroundTasks for the 'session' safety for now, or use a separate scope?
-    # User specifically asked for "FastAPI BackgroundTasks".
-    # I will inject the session factory logic later. For now, let's await it to ensure correctness in demo.
-    # Re-reading prompt: "Run a background task (using FastAPI BackgroundTasks)".
-    # Ok, I will add it as a background task. 
-    # WARNING: If db session closes, this fails. I should likely scoped_session in the task.
-    # I'll just comment this caveat and run it.
     background_tasks.add_task(memory_service.extract_and_update_memory, db, patient_id, msg_in.content, user_msg.id)
 
     # Step D: Chat Reply
@@ -133,16 +112,26 @@ async def chat_endpoint(
     prof_result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
     profile = prof_result.scalars().first()
     
-    reply_text = await chat_service.generate_reply(msg_in.content, profile)
+    chat_response = await chat_service.generate_reply(msg_in.content, profile)
     
+    # Map confidence string to score for DB storage (backward compatibility)
+    conf_map = {"High": 90, "Medium": 50, "Low": 10}
+    db_score = conf_map.get(chat_response.confidence, 0)
+
     bot_msg = Message(
         conversation_id=msg_in.conversation_id,
         sender_type="ai",
-        content=reply_text,
-        content_redacted=redaction_service.redact_pii(reply_text),
+        content=chat_response.content,
+        content_redacted=redaction_service.redact_pii(chat_response.content),
         risk_level=RiskLevel.LOW,
+        confidence_score=db_score,
         timestamp=datetime.utcnow()
     )
+    # Attach transient attributes for API Response (Pydantic schema)
+    bot_msg.confidence = chat_response.confidence
+    bot_msg.reason = chat_response.reason
+    bot_msg.citations = chat_response.citations
+    
     db.add(bot_msg)
     await db.commit()
     await db.refresh(bot_msg)

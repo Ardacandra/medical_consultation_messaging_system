@@ -23,6 +23,10 @@ class MessageResponse(BaseModel):
     sender_type: str
     content: str
     risk_level: RiskLevel
+    risk_reason: Optional[str] = None
+    confidence: Optional[str] = None
+    reason: Optional[str] = None
+    citations: Optional[List[str]] = None
     timestamp: datetime
     
     model_config = ConfigDict(from_attributes=True)

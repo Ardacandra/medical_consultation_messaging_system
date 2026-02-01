@@ -1,32 +1,46 @@
 from app.db.models import PatientProfile
 from app.services.llm_factory import LLMFactory
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+class ChatResponse(BaseModel):
+    content: str = Field(description="The empathetic response to the patient.")
+    confidence: str = Field(description="Confidence in the appropriateness of the response. Value must be 'High', 'Medium', or 'Low'.")
+    reason: str = Field(description="Short explanation of why this response was generated and why the confidence level was chosen.")
+    citations: List[str] = Field(description="List of sources or provenances (e.g. 'Patient Profile', 'General Medical Knowledge').")
 
 class ChatService:
     """
-    Service to generate empathetic conversational replies using Gemini.
+    Service to generate empathetic conversational replies using Gemini with medical tuning.
     """
     def __init__(self):
-        self.llm = LLMFactory.create_llm(temperature=0.7) # Higher temp for empathy
-        self.parser = StrOutputParser()
+        self.llm = LLMFactory.create_llm(temperature=0.3) # Lower temp for more control
+        self.parser = JsonOutputParser(pydantic_object=ChatResponse)
+        
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", "You are Nightingale, an empathetic medical assistant.\n"
-                       "Your goal is to provide supportive, concise responses to the patient.\n"
+                       "Your goal is to provide supportive, concise responses to the patient.\n\n"
                        "Context (Patient Profile):\n"
                        "Medications: {medications}\n"
                        "Symptoms: {symptoms}\n\n"
-                       "Constraints:\n"
-                       "- Do NOT provide medical diagnoses or advice.\n"
-                       "- If uncertain, ask clarifying questions.\n"
-                       "- Keep responses short (under 50 words)."),
+                       "Strict Medical Constraints:\n"
+                       "1. **Non-Diagnostic**: Do NOT provide medical diagnoses (\"You have X\").\n"
+                       "2. **No Med Changes**: Do NOT suggest changing, stopping, or starting medications.\n"
+                       "3. **No Treatment Plans**: Provide general info only. Do NOT give specific treatment plans.\n"
+                       "4. **No False Reassurance**: Do NOT say \"It's nothing to worry about\" for symptoms like chest pain, high fever, etc.\n"
+                       "5. **Consult Clinician Nudge**: If the topic is uncertain, high-stakes, or implies a medical decision, explicitly advise consulting a clinician.\n\n"
+                       "Output Format:\n"
+                       "Return valid JSON with 'content', 'confidence' ('High', 'Medium', 'Low'), 'reason', and 'citations'.\n"
+                       "{format_instructions}"),
             ("user", "{message}")
         ])
         self.chain = self.prompt | self.llm | self.parser
 
-    async def generate_reply(self, new_message: str, patient_profile: PatientProfile) -> str:
+    async def generate_reply(self, new_message: str, patient_profile: PatientProfile) -> ChatResponse:
         """
-        Generates a reply based on message and patient profile.
+        Generates a structured reply based on message and patient profile.
         """
         # Prepare context strings
         meds_str = ", ".join([m['value'] for m in patient_profile.medications]) if patient_profile and patient_profile.medications else "None"
@@ -36,9 +50,16 @@ class ChatService:
             response = await self.chain.ainvoke({
                 "message": new_message,
                 "medications": meds_str,
-                "symptoms": syms_str
+                "symptoms": syms_str,
+                "format_instructions": self.parser.get_format_instructions()
             })
-            return response
+            return ChatResponse(**response)
         except Exception as e:
             print(f"Chat Logic Failed: {e}")
-            return "I'm listening. Could you tell me more about how you're feeling?"
+            # Fallback safe response
+            return ChatResponse(
+                content="I'm listening, but I'm having trouble processing that right now. Could you tell me more about how you're feeling?",
+                confidence="Low",
+                reason="System error occurred during response generation.",
+                citations=["System Fallback"]
+            )

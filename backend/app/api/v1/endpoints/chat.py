@@ -97,7 +97,7 @@ async def chat_endpoint(
     user_msg.risk_reason = risk_result.reason
     await db.commit()
     
-    # If HIGH or MEDIUM RISK -> Stop
+    # If HIGH or MEDIUM RISK -> Stop AI and Trigger Escalation
     if risk_result.risk_level in [RiskLevel.HIGH, RiskLevel.MEDIUM]:
         # Fetch Profile for Snapshot
         patient_id = conversation.user_id if conversation.user_id else 1
@@ -121,36 +121,31 @@ async def chat_endpoint(
         await db.commit()
         await db.refresh(escalation)
         
-        # HIGH RISK: Early Return with Hardcoded System Message (Safety)
-        if risk_result.risk_level == RiskLevel.HIGH:
-            system_msg_content = "I'm really concerned about what you're sharing. I've flagged this for a nurse to review immediately - please hang tight, they will be with you right away."
-            
-            system_msg = Message(
-                conversation_id=msg_in.conversation_id,
-                sender_type="ai",
-                content=system_msg_content,
-                content_redacted=system_msg_content,
-                risk_level=risk_result.risk_level,
-                confidence_score=100, # System alerts are deterministic, so 100% confidence
-                timestamp=datetime.utcnow()
-            )
-            # Transient attributes for API response
-            system_msg.confidence = "High"
-            system_msg.reason = "System Rule: Automatic Escalation"
-            
-            db.add(system_msg)
-            await db.commit()
-            
-            return EscalationResponse(
-                message=system_msg_content,
-                escalation_id=escalation.id,
-                conversation_id=msg_in.conversation_id,
-                reason=risk_result.reason
-            )
+        # STOP: Early Return with Hardcoded System Message (Safety)
+        system_msg_content = "I'm really concerned about what you're sharing. I've flagged this for a nurse to review immediately - please hang tight, they will be with you right away."
         
-        # MEDIUM RISK: Fall through to standard LLM generation (Step D)
-        # The Escalation record is created (Nurse notified), but the patient gets a natural AI response.
-        pass
+        system_msg = Message(
+            conversation_id=msg_in.conversation_id,
+            sender_type="ai",
+            content=system_msg_content,
+            content_redacted=system_msg_content,
+            risk_level=risk_result.risk_level,
+            confidence_score=100, # System alerts are deterministic, so 100% confidence
+            timestamp=datetime.utcnow()
+        )
+        # Transient attributes for API response
+        system_msg.confidence = "High"
+        system_msg.reason = "System Rule: Automatic Escalation"
+        
+        db.add(system_msg)
+        await db.commit()
+        
+        return EscalationResponse(
+            message=system_msg_content,
+            escalation_id=escalation.id,
+            conversation_id=msg_in.conversation_id,
+            reason=risk_result.reason
+        )
         
     # Step D: Chat Reply
     # Get Profile

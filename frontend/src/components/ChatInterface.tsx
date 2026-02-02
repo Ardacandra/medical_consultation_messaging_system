@@ -17,6 +17,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [conversationId, setConversationId] = useState<number>(0);
+    const [isEscalated, setIsEscalated] = useState(false);
     const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
     // Poll for new messages every 3 seconds
@@ -38,8 +39,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
 
         fetchMessages();
         const interval = setInterval(fetchMessages, 3000);
-        return () => clearInterval(interval);
+        return () => {
+            clearInterval(interval);
+        };
     }, [conversationId, token]);
+
+    // Check if conversation is escalated from messages
+    useEffect(() => {
+        const hasEscalationMsg = messages.some(m => m.sender_type === 'ai' && m.content.includes('[SYSTEM]'));
+        const hasClinicianMsg = messages.some(m => m.sender_type === 'clinician');
+        if (hasEscalationMsg && !hasClinicianMsg) {
+            setIsEscalated(true);
+        } else if (hasClinicianMsg) {
+            setIsEscalated(false); // Resolved/Active once nurse replies
+        }
+    }, [messages]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -87,6 +101,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
                     content: input,
                     timestamp: new Date().toISOString()
                 }, sysMsg]);
+                setIsEscalated(true);
             } else {
                 // Normal chat reply
                 setMessages(prev => [...prev, {
@@ -163,6 +178,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
                             </div>
                         );
                     })}
+                    {isEscalated && (
+                        <div className="mx-auto max-w-md bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col items-center text-center gap-3 animate-pulse shadow-sm">
+                            <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-amber-900">Escalated to Clinic</h3>
+                                <p className="text-xs text-amber-700 mt-1">A nurse is reviewing your messages. Please stay on the line.</p>
+                            </div>
+                            <button className="bg-amber-600 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-amber-700 transition-colors">
+                                Call Clinic Now
+                            </button>
+                        </div>
+                    )}
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -173,12 +202,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                            placeholder="Type a message..."
-                            className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-6 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-gray-800 placeholder-gray-400 transition-all font-medium"
+                            placeholder={isEscalated ? "Waiting for nurse..." : "Type a message..."}
+                            disabled={isEscalated}
+                            className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-6 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-gray-800 placeholder-gray-400 transition-all font-medium disabled:opacity-50"
                         />
                         <button
                             onClick={sendMessage}
-                            disabled={!input.trim()}
+                            disabled={!input.trim() || isEscalated}
                             className="bg-blue-600 text-white rounded-full p-3 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg active:scale-95"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 translate-x-0.5" viewBox="0 0 20 20" fill="currentColor">

@@ -23,6 +23,7 @@ class RiskAnalysisService:
                        "- HIGH: Life-threatening, chest pain, suicide ideation, stroke signs, severe difficulty breathing.\n"
                        "- MEDIUM: Severe pain, high fever, concerning symptoms but not immediately life-threatening.\n"
                        "- LOW: Routine questions, medication refills, appointment booking, mild symptoms.\n\n"
+                       "You MUST provide a 'summary' that is a concise 1-5 bullet point triage summary of the situation.\n\n"
                        "Output strictly valid JSON matching the schema.\n"
                        "{format_instructions}"),
             ("user", "History: {history}\n\nNew Message: {message}")

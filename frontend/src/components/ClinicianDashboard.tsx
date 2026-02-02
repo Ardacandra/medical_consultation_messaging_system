@@ -34,12 +34,29 @@ interface MessageLogItem {
     confidence_level?: string;
 }
 
+interface Escalation {
+    id: number;
+    conversation_id: number;
+    trigger_message_id: number;
+    status: string;
+    triage_summary: string;
+    patient_profile_snapshot?: any;
+    created_at?: string;
+}
+
 const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
     const [patients, setPatients] = useState<PatientListItem[]>([]);
     const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<PatientProfile | null>(null);
     const [messageLog, setMessageLog] = useState<MessageLogItem[]>([]);
     const [loading, setLoading] = useState(false);
+
+    // Escalation State
+    const [escalations, setEscalations] = useState<Escalation[]>([]);
+    const [activeTab, setActiveTab] = useState<'patients' | 'triage'>('patients');
+    const [selectedEscalationId, setSelectedEscalationId] = useState<number | null>(null);
+    const [replyContent, setReplyContent] = useState('');
+    const [submittingReply, setSubmittingReply] = useState(false);
 
     // Fetch Patient List
     const fetchPatients = async () => {
@@ -56,12 +73,45 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
         }
     };
 
+    // Fetch Escalations
+    const fetchEscalations = async () => {
+        try {
+            const res = await fetch('/api/v1/escalations/?status=pending', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setEscalations(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch escalations", e);
+        }
+    };
+
     // Poll for list updates
     useEffect(() => {
         fetchPatients();
-        const interval = setInterval(fetchPatients, 5000);
+        fetchEscalations();
+        const interval = setInterval(() => {
+            fetchPatients();
+            fetchEscalations();
+        }, 5000);
         return () => clearInterval(interval);
     }, [token]);
+
+    // Automatically select patient if escalation is selected
+    useEffect(() => {
+        if (selectedEscalationId) {
+            const esc = escalations.find(e => e.id === selectedEscalationId);
+            if (esc) {
+                // We need to find the patient_id associated with this conversation
+                // For now, let's assume we can fetch the conversation or patient info
+                // Simplest: The patient list already has the patient. 
+                // But we don't have patient_id in Escalation model directly (assigned to conversation)
+                // Let's modify the fetch logic to get patient context if needed, or just show the log.
+            }
+        }
+    }, [selectedEscalationId]);
 
     // Fetch Profile and Messages when selected
     useEffect(() => {
@@ -109,38 +159,96 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
 
     return (
         <div className="w-full w-full h-[850px] flex bg-white shadow-xl rounded-xl overflow-hidden font-sans border border-gray-100">
-            {/* Left Sidebar: Patient List */}
+            {/* Left Sidebar: Patient List & Triage Queue */}
             <div className="w-1/3 bg-gray-50 border-r border-gray-200 flex flex-col">
-                <div className="p-5 border-b border-gray-200 bg-white">
-                    <h2 className="text-xl font-bold text-gray-800">Patients</h2>
-                    <p className="text-xs text-gray-500 mt-1">Sorted by recent activity</p>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                    {patients.map(patient => (
-                        <div
-                            key={patient.id}
-                            onClick={() => setSelectedPatientId(patient.id)}
-                            className={`p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-blue-50 
-                                ${selectedPatientId === patient.id ? 'bg-blue-50 border-l-4 border-blue-600 shadow-inner' : 'border-l-4 border-transparent'}
-                            `}
+                <div className="p-0 border-b border-gray-200 bg-white">
+                    <div className="flex border-b">
+                        <button
+                            onClick={() => setActiveTab('patients')}
+                            className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'patients' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/30' : 'text-gray-500 hover:bg-gray-50'}`}
                         >
-                            <div className="flex justify-between items-start mb-1">
-                                <span className={`font-semibold text-sm ${selectedPatientId === patient.id ? 'text-blue-900' : 'text-gray-700'}`}>
-                                    {patient.email}
-                                </span>
-                                {patient.risk_status === 'escalated' && (
-                                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-sm" title="Escalated / High Risk"></span>
-                                )}
-                            </div>
-                            <div className="text-xs text-gray-400 font-medium">
-                                {patient.last_active
-                                    ? new Date(patient.last_active).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                                    : 'No activity'}
-                            </div>
-                        </div>
-                    ))}
-                    {patients.length === 0 && (
-                        <div className="p-8 text-center text-gray-400 italic text-sm">No patients found.</div>
+                            All Patients ({patients.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('triage')}
+                            className={`flex-1 py-4 text-sm font-bold transition-colors relative ${activeTab === 'triage' ? 'text-red-600 border-b-2 border-red-600 bg-red-50/30' : 'text-gray-500 hover:bg-gray-50'}`}
+                        >
+                            Triage Queue ({escalations.length})
+                            {escalations.length > 0 && (
+                                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                    {activeTab === 'patients' ? (
+                        <>
+                            {patients.map(patient => (
+                                <div
+                                    key={patient.id}
+                                    onClick={() => {
+                                        setSelectedPatientId(patient.id);
+                                        setSelectedEscalationId(null);
+                                    }}
+                                    className={`p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-blue-50 
+                                        ${selectedPatientId === patient.id && !selectedEscalationId ? 'bg-blue-50 border-l-4 border-blue-600 shadow-inner' : 'border-l-4 border-transparent'}
+                                    `}
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className={`font-semibold text-sm ${selectedPatientId === patient.id && !selectedEscalationId ? 'text-blue-900' : 'text-gray-700'}`}>
+                                            {patient.email}
+                                        </span>
+                                        {patient.risk_status === 'escalated' && (
+                                            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-sm" title="Escalated / High Risk"></span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-gray-400 font-medium">
+                                        {patient.last_active
+                                            ? new Date(patient.last_active).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                            : 'No activity'}
+                                    </div>
+                                </div>
+                            ))}
+                            {patients.length === 0 && (
+                                <div className="p-8 text-center text-gray-400 italic text-sm">No patients found.</div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            {escalations.map(esc => (
+                                <div
+                                    key={esc.id}
+                                    onClick={() => {
+                                        setSelectedEscalationId(esc.id);
+                                        // Find patient associated with this conversation if possible
+                                        // We can use the patient list to find them by searching for matching active conversations
+                                        // For simplicity, we just select the escalation and fetch the log for that conversation
+                                    }}
+                                    className={`p-4 border-b border-red-100 cursor-pointer transition-all hover:bg-red-50 
+                                        ${selectedEscalationId === esc.id ? 'bg-red-50 border-l-4 border-red-600 shadow-inner' : 'border-l-4 border-transparent'}
+                                    `}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="text-xs font-black uppercase tracking-tighter text-red-600 bg-red-100 px-1.5 py-0.5 rounded">Urgent</span>
+                                        <span className="text-[10px] text-gray-400 font-mono">#{esc.id}</span>
+                                    </div>
+                                    <div className="text-sm font-bold text-gray-800 mb-1">
+                                        Escalation in Conv {esc.conversation_id}
+                                    </div>
+                                    <div className="text-xs text-gray-600 line-clamp-2 italic border-l-2 border-red-200 pl-2 py-1 bg-white/50 rounded-r">
+                                        {esc.triage_summary}
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 mt-2 flex justify-between items-center">
+                                        <span>Trigger Msg: {esc.trigger_message_id}</span>
+                                        {esc.created_at && <span>{new Date(esc.created_at).toLocaleTimeString()}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                            {escalations.length === 0 && (
+                                <div className="p-8 text-center text-gray-400 italic text-sm">No pending escalations.</div>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
@@ -151,13 +259,75 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
                     <div className="flex flex-col h-full">
                         <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 flex-shrink-0">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-800">
-                                    Patient Profile
-                                </h2>
-                                <span className="text-sm text-gray-500 font-mono bg-gray-200 px-2 py-0.5 rounded text-xs">ID: {selectedPatientId}</span>
+                                {selectedEscalationId ? (
+                                    <>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-black rounded uppercase">Escalation Detail</span>
+                                            <h2 className="text-2xl font-bold text-red-800">Ticket #{selectedEscalationId}</h2>
+                                        </div>
+                                        <p className="text-sm text-gray-500">Reviewing automated triage summary and snapshot.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <h2 className="text-2xl font-bold text-gray-800">Patient Profile</h2>
+                                        <span className="text-sm text-gray-500 font-mono bg-gray-200 px-2 py-0.5 rounded text-xs">ID: {selectedPatientId}</span>
+                                    </>
+                                )}
                             </div>
                             {loading && <span className="text-xs text-blue-500 font-medium animate-pulse bg-blue-50 px-3 py-1 rounded-full">Syncing live data...</span>}
                         </div>
+
+                        {selectedEscalationId && (
+                            <div className="p-6 bg-red-50 border-b border-red-100 flex-shrink-0">
+                                <h3 className="text-sm font-bold text-red-700 uppercase mb-3 flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                                    Triage Summary
+                                </h3>
+                                <div className="bg-white p-4 rounded-lg border border-red-200 text-sm text-red-900 whitespace-pre-wrap leading-relaxed shadow-sm">
+                                    {escalations.find(e => e.id === selectedEscalationId)?.triage_summary}
+                                </div>
+
+                                <div className="mt-4 flex flex-col gap-3">
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Clinician Response</label>
+                                    <textarea
+                                        className="w-full h-32 p-4 rounded-lg border border-gray-200 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all text-sm"
+                                        placeholder="Type your response to the patient here... This will appear in their chat from 'Verified Nurse'."
+                                        value={replyContent}
+                                        onChange={(e) => setReplyContent(e.target.value)}
+                                    ></textarea>
+                                    <button
+                                        onClick={async () => {
+                                            if (!replyContent.trim()) return;
+                                            setSubmittingReply(true);
+                                            try {
+                                                const res = await fetch(`/api/v1/escalations/${selectedEscalationId}/reply`, {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'Authorization': `Bearer ${token}`
+                                                    },
+                                                    body: JSON.stringify({ content: replyContent })
+                                                });
+                                                if (res.ok) {
+                                                    setReplyContent('');
+                                                    setSelectedEscalationId(null);
+                                                    fetchEscalations();
+                                                    fetchPatients();
+                                                }
+                                            } catch (e) {
+                                                console.error(e);
+                                            } finally {
+                                                setSubmittingReply(false);
+                                            }
+                                        }}
+                                        disabled={submittingReply || !replyContent.trim()}
+                                        className="bg-red-600 text-white font-bold py-3 rounded-lg hover:bg-red-700 transition-colors shadow-lg active:scale-[0.98] disabled:opacity-50"
+                                    >
+                                        {submittingReply ? 'Sending Response...' : 'Send to Patient & Resolve Ticket'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="flex-1 overflow-y-auto p-8 space-y-8">
                             {/* Profile Sections */}

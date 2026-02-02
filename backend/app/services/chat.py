@@ -26,8 +26,12 @@ class ChatService:
                        "Context (Patient Profile):\n"
                        "Medications: {medications}\n"
                        "Symptoms: {symptoms}\n\n"
-                       "Conversation History:\n"
+                       "Conversation History (IMPORTANT):\n"
                        "{history}\n\n"
+                       "Ground Truth (Clinician Guidance):\n"
+                       "Messages in the history labeled 'Verified Nurse' (sender_type: clinician) are GROUND TRUTH. \n"
+                       "If clinician guidance conflicts with any other information (including your own prior analysis or patient profile), the clinician guidance ALWAYS wins. \n"
+                       "You must follow clinician instructions strictly and cite them if appropriate.\n\n"
                        "Strict Medical Constraints:\n"
                        "1. **Non-Diagnostic**: Do NOT provide medical diagnoses (\"You have X\").\n"
                        "2. **No Med Changes**: Do NOT suggest changing, stopping, or starting medications.\n"
@@ -56,7 +60,13 @@ class ChatService:
         if history:
             # History comes in as objects, need to serialize
             for msg in history:
-                role = "Patient" if msg.get("sender_type") == "patient" else "Nightingale"
+                if msg.get("sender_type") == "patient":
+                    role = "Patient"
+                elif msg.get("sender_type") == "clinician":
+                    role = "Verified Nurse"
+                else:
+                    role = "Nightingale"
+                
                 content = msg.get("content_redacted") or msg.get("content")
                 history_str += f"{role}: {content}\n"
         

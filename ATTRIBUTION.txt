@@ -1,0 +1,28 @@
+# ATTRIBUTIONS
+
+This project leverages several open-source libraries and artificial intelligence models. Below is a list of the primary components and their respective licenses.
+
+## 🤖 AI Models
+* **Google Gemini (Generative AI)**
+  - Provider: Google DeepMind
+  - Usage: Medical Triage, Living Memory Extraction, PII Detection.
+  - License: [Google Generative AI Terms of Service](https://ai.google.dev/terms)
+
+## 🐍 Backend (Python)
+* **FastAPI** (MIT License) - Web framework.
+* **Uvicorn** (BSD 3-Clause) - ASGI server.
+* **SQLAlchemy** (MIT License) - Database Toolkit and ORM.
+* **Asyncpg** (Apache License 2.0) - Async PostgreSQL client.
+* **Pydantic** (MIT License) - Data validation and settings management.
+* **Alembic** (MIT License) - Database migrations.
+* **python-dotenv** (BSD 3-Clause) - Environment variable management.
+* **psycopg2-binary** (LGPL with exceptions) - PostgreSQL adapter.
+
+## ⚛️ Frontend (TypeScript/React)
+* **React** (MIT License) - UI Component library.
+* **Vite** (MIT License) - Build tool and development server.
+* **Tailwind CSS** (MIT License) - Utility-first CSS framework.
+* **TypeScript** (Apache License 2.0) - Typed superset of JavaScript.
+
+## ⚖️ General Licenses
+Unless otherwise specified, the core logic and original code of this project are provided under the MIT License.

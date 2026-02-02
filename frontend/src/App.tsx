@@ -43,19 +43,18 @@ function App() {
         <h1 className="text-2xl font-bold text-gray-800">Nightingale AI</h1>
         <div className="flex items-center gap-4">
           <div className="space-x-4">
-            <button
-              onClick={() => setView('patient')}
-              className={`px-4 py-2 rounded ${view === 'patient' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            >
-              Patient View
-            </button>
-            {role === 'clinician' && (
+            {role !== 'clinician' && (
               <button
-                onClick={() => setView('clinician')}
-                className={`px-4 py-2 rounded ${view === 'clinician' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                onClick={() => setView('patient')}
+                className={`px-4 py-2 rounded ${view === 'patient' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
               >
-                Clinician View
+                Patient View
               </button>
+            )}
+            {role === 'clinician' && (
+              <span className="px-4 py-2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                Clinician Workspace
+              </span>
             )}
           </div>
           <button onClick={handleLogout} className="text-red-500 hover:text-red-700 text-sm underline">

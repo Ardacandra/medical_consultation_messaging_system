@@ -57,21 +57,46 @@ async def startup():
             default_user = User(
                 id=1, 
                 email="patient@example.com", 
-                hashed_password=get_password_hash("password"),
+                hashed_password=get_password_hash("Nightingale@123"),
                 role="patient",
                 is_active=True
             )
             session.add(default_user)
             await session.commit()
         else:
-            # Backfill password if missing (prototype fix)
-            if not user.hashed_password:
-                print("Backfilling password for default user...")
-                from app.core.security import get_password_hash
-                user.hashed_password = get_password_hash("password")
+            # Backfill password if missing or update if it's the old insecure default
+            from app.core.security import get_password_hash, verify_password
+            
+            # Check if password is the old "password"
+            is_old_password = False
+            if user.hashed_password:
+                try:
+                    is_old_password = verify_password("password", user.hashed_password)
+                except Exception:
+                    pass
+
+            if not user.hashed_password or is_old_password:
+                print("Updating/Backfilling password for default user...")
+                user.hashed_password = get_password_hash("Nightingale@123")
                 user.role = "patient"
                 user.is_active = True
                 await session.commit()
+
+        # Seed default clinician (Check explicitly)
+        result = await session.execute(select(User).where(User.id == 2))
+        clinician = result.scalars().first()
+        if not clinician:
+            print("Seeding default clinician...")
+            from app.core.security import get_password_hash
+            default_clinician = User(
+                id=2, 
+                email="clinician@example.com", 
+                hashed_password=get_password_hash("Nightingale@123"),
+                role="clinician",
+                is_active=True
+            )
+            session.add(default_clinician)
+            await session.commit()
 
 
 @app.get("/")

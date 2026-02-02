@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import PatientProfileSidebar from './PatientProfileSidebar';
+
 
 // Types
 interface Message {
@@ -109,7 +109,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
     };
 
     return (
-        <div className="flex w-full max-w-6xl h-[700px] bg-white rounded-lg shadow-xl overflow-hidden font-sans">
+        <div className="flex w-full w-full h-[700px] bg-white rounded-lg shadow-xl overflow-hidden font-sans">
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col h-full relative">
                 <div className="p-4 border-b bg-white z-10 shadow-sm flex justify-between items-center">
@@ -189,8 +189,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ token }) => {
                 </div>
             </div>
 
-            {/* Patient Profile Sidebar */}
-            <PatientProfileSidebar token={token} />
+
         </div>
     );
 };

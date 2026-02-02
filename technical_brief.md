@@ -4,27 +4,7 @@
 
 The Nightingale system is built as a **Secure, AI-Gated Healthcare Messaging Platform**. It employs a "Safety-First" architecture where every interaction is validated for medical risk before reaching the patient.
 
-```mermaid
-graph TD
-    P[Patient App - React] -->|HTTPS/JWT| API[FastAPI Gateway]
-    C[Clinician App - React] -->|HTTPS/JWT| API
-    
-    subgraph Backend Services
-        API --> RS[Risk Analysis Service]
-        RS --> |Gated Response| CH[Chat Service]
-        CH --> LLM[LLM Factory - Gemini]
-        API --> MS[Memory Service]
-    end
-    
-    subgraph Database Layer
-        DB[(PostgreSQL)]
-        API --> DB
-        MS --> DB
-    end
-    
-    CH -.->|Escalation Event| Triage[Clinician Triage Queue]
-    MS -.->|Mutation| Profile[Patient Living Profile]
-```
+![Architecture Diagram](architecture_diagram.png)
 
 ### Key Architectural Pillars:
 - **Risk-Gated Pipeline**: Every incoming message passes through `RiskAnalysisService` before any AI advice is generated. If "Med" or "High" risk is detected, the AI is short-circuited.
@@ -37,46 +17,7 @@ graph TD
 
 The schema is designed for **Medical Provenance**. Every extracted fact must point back to the specific message that generated it.
 
-```mermaid
-erDiagram
-    USER ||--o{ CONVERSATION : owns
-    USER {
-        int id
-        string email
-        string role "patient | clinician"
-    }
-    
-    CONVERSATION ||--o{ MESSAGE : contains
-    MESSAGE ||--o{ CITATION : supports
-    MESSAGE {
-        int id
-        string content_redacted
-        string role "user | assistant | clinician"
-        string risk_level
-    }
-    
-    MESSAGE ||--o{ ESCALATION : triggers
-    ESCALATION {
-        int id
-        string triage_summary
-        string status "pending | resolved"
-    }
-    
-    USER ||--o{ MEDICAL_MEMORY : has
-    MEDICAL_MEMORY {
-        int id
-        string value "Advil"
-        string status "active | stopped"
-        int message_id "Provenance Link"
-    }
-    
-    MESSAGE ||--o{ AUDIO_TRANSCRIPT : "Voice Readiness"
-    AUDIO_TRANSCRIPT {
-        int id
-        string storage_path
-        string status "processed | failed"
-    }
-```
+![Schema Diagram](schema_diagram.png)
 
 ---
 
@@ -97,6 +38,7 @@ erDiagram
 - **Clinician Ground Truth**: Ensuring that when a nurse replies, that message is marked as "Verified" and used to ground future AI responses.
 
 ### What was cut (Out of Scope):
+- **LLM Fine-tuning**: Due to the 48-hour build constraint, I opted for rigorous **Prompt Engineering** over fine-tuning with custom datasets. This ensured the LLM followed medical safety guardrails without the latency of training or complex data preparation.
 - **Complex Clinician Roster**: In this MVP, all clinicians see a global triage queue. In production, this would be scoped to specific clinics/specialties.
 - **Full E2E Encryption**: While TLS is used, the backend still processes text to perform redaction and extraction. A future iteration might use Trusted Execution Environments (TEEs).
 

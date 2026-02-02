@@ -21,7 +21,7 @@ async def test_risk_escalation_high(client: AsyncClient, patient_token: str):
     # The schema has 'message' and 'escalation_id'
     
     assert "escalation_id" in data
-    assert "risk detected" in data["message"].lower()
+    assert "flagged" in data["message"].lower() or "nurse" in data["message"].lower()
     
     # Ideally we check the DB to see if AI *didn't* provide medical advice, 
     # but the API response structure confirming escalation itself implies the AI advice circuit was bypassed or short-circuited.

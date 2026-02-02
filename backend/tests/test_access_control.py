@@ -14,16 +14,15 @@ async def test_patient_cannot_access_clinician_queue(client: AsyncClient, patien
     assert resp.status_code == 403
 
 @pytest.mark.asyncio
-async def test_clinician_can_access_queue(client: AsyncClient):
-    # Create a clinician token (Role=clinician)
-    # We need to make sure User 2 exists or is mocked as clinician.
-    # In a real test we'd seed the DB. 
-    # For now assuming we can use a token that claims to be a clinician 
-    # BUT the backend checks DB role. So we must ensure user 2 is clinician in DB.
-    # If using shared DB, we might fail if user 2 doesn't exist.
-    pass 
-    # Skipping actual execution if we can't seed easily without wiping DB.
-    # Instead, we will rely on the verify_security.py script results which we saw earlier.
+async def test_clinician_can_access_queue(client: AsyncClient, clinician_token: str):
+    headers = {"Authorization": f"Bearer {clinician_token}"}
+    
+    # Clinician should be able to access escalations
+    resp = await client.get("/api/v1/escalations/", headers=headers)
+    
+    # Expect OK (even if empty)
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
 
 @pytest.mark.asyncio
 async def test_conversation_isolation(client: AsyncClient):

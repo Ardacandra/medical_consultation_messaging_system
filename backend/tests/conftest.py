@@ -3,7 +3,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.main import app
-from app.db.database import Base, get_db
+from app.db.database import Base, get_db, SessionLocal
 from app.core.security import create_access_token
 import asyncio
 
@@ -39,8 +39,11 @@ async def override_get_db():
             yield session
             
     app.dependency_overrides[get_db] = _get_test_db
+    # Also patch SessionLocal in the endpoint if it's imported directly
+    chat_endpoint.SessionLocal = TestSessionLocal
     yield
     app.dependency_overrides.clear()
+    chat_endpoint.SessionLocal = SessionLocal # Restore
     await test_engine.dispose()
 
 from unittest.mock import MagicMock

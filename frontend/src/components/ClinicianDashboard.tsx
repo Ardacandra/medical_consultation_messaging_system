@@ -23,10 +23,22 @@ interface ClinicianDashboardProps {
     token: string;
 }
 
+interface MessageLogItem {
+    id: number;
+    sender_type: 'patient' | 'ai' | 'clinician';
+    content: string;
+    timestamp: string;
+    risk_level?: string;
+    risk_reason?: string;
+    confidence_score?: number;
+    confidence_level?: string;
+}
+
 const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
     const [patients, setPatients] = useState<PatientListItem[]>([]);
     const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<PatientProfile | null>(null);
+    const [messageLog, setMessageLog] = useState<MessageLogItem[]>([]);
     const [loading, setLoading] = useState(false);
 
     // Fetch Patient List
@@ -51,23 +63,35 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
         return () => clearInterval(interval);
     }, [token]);
 
-    // Fetch Profile when selected
+    // Fetch Profile and Messages when selected
     useEffect(() => {
         if (!selectedPatientId) {
             setSelectedProfile(null);
+            setMessageLog([]);
             return;
         }
 
-        const fetchProfile = async () => {
+        const fetchData = async () => {
             setLoading(true);
             try {
-                const res = await fetch(`/api/v1/clinician/patient/${selectedPatientId}/profile`, {
+                // Fetch Profile
+                const resProfile = await fetch(`/api/v1/clinician/patient/${selectedPatientId}/profile`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (res.ok) {
-                    const data = await res.json();
+                if (resProfile.ok) {
+                    const data = await resProfile.json();
                     setSelectedProfile(data);
                 }
+
+                // Fetch Message Log
+                const resMsg = await fetch(`/api/v1/clinician/patient/${selectedPatientId}/messages`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (resMsg.ok) {
+                    const dataMsg = await resMsg.json();
+                    setMessageLog(dataMsg);
+                }
+
             } catch (e) {
                 console.error(e);
             } finally {
@@ -75,16 +99,16 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
             }
         };
 
-        fetchProfile();
-        // Set up separate poll for profile updates if needed, or just refresh on select
-        const interval = setInterval(fetchProfile, 3000);
+        fetchData();
+        // Set up separate poll for updates if needed, or just refresh on select
+        const interval = setInterval(fetchData, 3000);
         return () => clearInterval(interval);
 
     }, [selectedPatientId, token]);
 
 
     return (
-        <div className="w-full w-full h-[800px] flex bg-white shadow-xl rounded-xl overflow-hidden font-sans border border-gray-100">
+        <div className="w-full w-full h-[850px] flex bg-white shadow-xl rounded-xl overflow-hidden font-sans border border-gray-100">
             {/* Left Sidebar: Patient List */}
             <div className="w-1/3 bg-gray-50 border-r border-gray-200 flex flex-col">
                 <div className="p-5 border-b border-gray-200 bg-white">
@@ -122,10 +146,10 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
             </div>
 
             {/* Right Main Area: Patient Details */}
-            <div className="flex-1 bg-white flex flex-col">
+            <div className="flex-1 bg-white flex flex-col h-full overflow-hidden">
                 {selectedPatientId ? (
-                    <>
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <div className="flex flex-col h-full">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 flex-shrink-0">
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-800">
                                     Patient Profile
@@ -135,7 +159,7 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
                             {loading && <span className="text-xs text-blue-500 font-medium animate-pulse bg-blue-50 px-3 py-1 rounded-full">Syncing live data...</span>}
                         </div>
 
-                        <div className="p-8 overflow-y-auto space-y-8">
+                        <div className="flex-1 overflow-y-auto p-8 space-y-8">
                             {/* Profile Sections */}
                             {selectedProfile ? (
                                 <div className="grid grid-cols-1 gap-6">
@@ -166,11 +190,28 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
                                         </h3>
                                         {selectedProfile.medications && selectedProfile.medications.length > 0 ? (
                                             <div className="flex flex-wrap gap-2">
-                                                {selectedProfile.medications.map((item: any, idx: number) => (
-                                                    <span key={idx} className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-100">
-                                                        {item.value}
-                                                    </span>
-                                                ))}
+                                                {selectedProfile.medications.map((item: any, idx: number) => {
+                                                    if (item.status === 'incorrect') {
+                                                        return (
+                                                            <span key={idx} className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-red-100 line-through opacity-75" title="Patient Refuted/Denied">
+                                                                {item.value} (Refuted)
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (item.status === 'stopped') {
+                                                        return (
+                                                            <span key={idx} className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200" title={`Stopped: ${new Date(item.stopped_at).toLocaleDateString()}`}>
+                                                                {item.value} <span className="text-xs opacity-75 ml-1">(Stopped)</span>
+                                                            </span>
+                                                        );
+                                                    }
+                                                    // Active
+                                                    return (
+                                                        <span key={idx} className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-100">
+                                                            {item.value}
+                                                        </span>
+                                                    );
+                                                })}
                                             </div>
                                         ) : <span className="text-gray-400 italic text-sm pl-1">None active</span>}
                                     </div>
@@ -184,20 +225,112 @@ const ClinicianDashboard: React.FC<ClinicianDashboardProps> = ({ token }) => {
                                         </h3>
                                         {selectedProfile.symptoms && selectedProfile.symptoms.length > 0 ? (
                                             <div className="flex flex-wrap gap-2">
-                                                {selectedProfile.symptoms.map((item: any, idx: number) => (
-                                                    <span key={idx} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-100">
-                                                        {item.value}
-                                                    </span>
-                                                ))}
+                                                {selectedProfile.symptoms.map((item: any, idx: number) => {
+                                                    if (item.status === 'incorrect') {
+                                                        return (
+                                                            <span key={idx} className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-red-100 line-through opacity-75" title="Patient refuted">
+                                                                {item.value} (Refuted)
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (item.status === 'stopped' || item.status === 'resolved') {
+                                                        return (
+                                                            <span key={idx} className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200" title={`Resolved: ${item.stopped_at ? new Date(item.stopped_at).toLocaleDateString() : 'Unknown'}`}>
+                                                                {item.value} <span className="text-xs opacity-75 ml-1">(Resolved)</span>
+                                                            </span>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <span key={idx} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-100">
+                                                            {item.value}
+                                                        </span>
+                                                    );
+                                                })}
                                             </div>
                                         ) : <span className="text-gray-400 italic text-sm pl-1">None reported</span>}
                                     </div>
+
+                                    {/* Message Log */}
+                                    <div className="mt-8">
+                                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                                            Message & Risk Log
+                                        </h3>
+                                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                            <table className="min-w-full text-sm">
+                                                <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider text-xs font-semibold">
+                                                    <tr>
+                                                        <th className="px-6 py-3 text-left">Time</th>
+                                                        <th className="px-6 py-3 text-left">Sender</th>
+                                                        <th className="px-6 py-3 text-left w-2/5">Message</th>
+                                                        <th className="px-6 py-3 text-left">Risk Analysis</th>
+                                                        <th className="px-6 py-3 text-left">Confidence</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {messageLog.map(msg => (
+                                                        <tr key={msg.id} className="hover:bg-gray-50 transition-colors">
+                                                            <td className="px-6 py-4 whitespace-nowrap text-gray-400 text-xs">
+                                                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                <div className="text-[10px]">{new Date(msg.timestamp).toLocaleDateString()}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                                <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${msg.sender_type === 'patient' ? 'bg-blue-100 text-blue-700' :
+                                                                    msg.sender_type === 'ai' ? 'bg-purple-100 text-purple-700' :
+                                                                        'bg-amber-100 text-amber-700'
+                                                                    }`}>
+                                                                    {msg.sender_type}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-gray-700 leading-relaxed max-w-xs truncate" title={msg.content}>
+                                                                {msg.content}
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                                {msg.risk_level && (
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className={`w-2 h-2 rounded-full ${msg.risk_level === 'HIGH' ? 'bg-red-500' :
+                                                                                msg.risk_level === 'MEDIUM' ? 'bg-yellow-500' :
+                                                                                    'bg-green-500'
+                                                                                }`}></span>
+                                                                            <span className={`text-xs font-bold ${msg.risk_level === 'HIGH' ? 'text-red-700' :
+                                                                                msg.risk_level === 'MEDIUM' ? 'text-yellow-700' :
+                                                                                    'text-green-700'
+                                                                                }`}>{msg.risk_level}</span>
+                                                                        </div>
+                                                                        {msg.risk_reason && (
+                                                                            <span className="text-[10px] text-gray-400 max-w-[150px] truncate" title={msg.risk_reason}>{msg.risk_reason}</span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                                {msg.confidence_level ? (
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${msg.confidence_level === 'High' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                                                            msg.confidence_level === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                                                'bg-slate-50 text-slate-600 border-slate-100'
+                                                                            }`}>
+                                                                            {msg.confidence_level}
+                                                                        </span>
+                                                                        {msg.confidence_score && <span className="text-[10px] text-gray-300">({msg.confidence_score}%)</span>}
+                                                                    </div>
+                                                                ) : <span className="text-gray-300 text-xs">-</span>}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {messageLog.length === 0 && <div className="p-6 text-center text-gray-400 italic">No messages recorded.</div>}
+                                        </div>
+                                    </div>
+
                                 </div>
                             ) : (
                                 <div className="text-center py-10 text-gray-400">Loading profile data...</div>
                             )}
                         </div>
-                    </>
+                    </div>
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
                         <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>

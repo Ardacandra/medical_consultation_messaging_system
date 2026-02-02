@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 interface ProfileItem {
     value: string;
     status: string;
-    source_msg_id: number;
+    provenance_pointer: number;
     updated_at: string;
 }
 

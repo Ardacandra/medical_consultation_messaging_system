@@ -20,17 +20,22 @@ class ChatService:
         self.parser = JsonOutputParser(pydantic_object=ChatResponse)
         
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are Nightingale, an empathetic medical assistant.\n"
-                       "Your goal is to provide supportive, concise responses to the patient.\n\n"
+            ("system", "You are Nightingale, a warm, empathetic, and caring medical assistant.\n"
+                       "Your goal is to provide supportive, human-like responses while maintaining safety.\n"
+                       "Avoid robotic phrasing like 'I understand' or 'Acknowledged'. Instead, speak naturally like a caring nurse.\n\n"
                        "Context (Patient Profile):\n"
                        "Medications: {medications}\n"
                        "Symptoms: {symptoms}\n\n"
+                       "Conversation History:\n"
+                       "{history}\n\n"
                        "Strict Medical Constraints:\n"
                        "1. **Non-Diagnostic**: Do NOT provide medical diagnoses (\"You have X\").\n"
                        "2. **No Med Changes**: Do NOT suggest changing, stopping, or starting medications.\n"
                        "3. **No Treatment Plans**: Provide general info only. Do NOT give specific treatment plans.\n"
                        "4. **No False Reassurance**: Do NOT say \"It's nothing to worry about\" for symptoms like chest pain, high fever, etc.\n"
-                       "5. **Consult Clinician Nudge**: If the topic is uncertain, high-stakes, or implies a medical decision, explicitly advise consulting a clinician.\n\n"
+                       "5. **Consult Clinician Nudge**: If the topic is uncertain, high-stakes, or implies a medical decision, explicitly advise consulting a clinician.\n"
+                       "6. **Clarification**: If the patient's statement is vague, ask *one* targeted clarifying question to understand their condition better.\n"
+                       "7. **Doctor Recommendation**: If you suggest seeing a doctor, provide a MOCKED recommendation: \"I recommend seeing Dr. Emily Chen (General Practitioner) who has an opening tomorrow at 10:00 AM at City Health Clinic.\"\n\n"
                        "Output Format:\n"
                        "Return valid JSON with 'content', 'confidence' ('High', 'Medium', 'Low'), 'reason', and 'citations'.\n"
                        "{format_instructions}"),
@@ -38,17 +43,27 @@ class ChatService:
         ])
         self.chain = self.prompt | self.llm | self.parser
 
-    async def generate_reply(self, new_message: str, patient_profile: PatientProfile) -> ChatResponse:
+    async def generate_reply(self, new_message: str, patient_profile: PatientProfile, history: List[dict]) -> ChatResponse:
         """
-        Generates a structured reply based on message and patient profile.
+        Generates a structured reply based on message, history, and patient profile.
         """
         # Prepare context strings
         meds_str = ", ".join([m['value'] for m in patient_profile.medications]) if patient_profile and patient_profile.medications else "None"
         syms_str = ", ".join([s['value'] for s in patient_profile.symptoms]) if patient_profile and patient_profile.symptoms else "None"
         
+        # Format history string
+        history_str = ""
+        if history:
+            # History comes in as objects, need to serialize
+            for msg in history:
+                role = "Patient" if msg.get("sender_type") == "patient" else "Nightingale"
+                content = msg.get("content_redacted") or msg.get("content")
+                history_str += f"{role}: {content}\n"
+        
         try:
             response = await self.chain.ainvoke({
                 "message": new_message,
+                "history": history_str,
                 "medications": meds_str,
                 "symptoms": syms_str,
                 "format_instructions": self.parser.get_format_instructions()

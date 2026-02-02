@@ -94,3 +94,54 @@ async def get_patient_profile_by_id(
         )
     
     return profile
+
+class MessageLogItem(BaseModel):
+    id: int
+    sender_type: str
+    content: str
+    timestamp: datetime
+    risk_level: str | None
+    risk_reason: str | None
+    confidence_score: int | None
+    confidence_level: str | None # Derived from score
+
+@router.get("/patient/{patient_id}/messages", response_model=List[MessageLogItem])
+async def get_patient_messages(
+    patient_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get full message log for a patient (Clinician only).
+    """
+    if current_user.role != "clinician":
+        raise HTTPException(status_code=403, detail="Only clinicians can access this endpoint")
+
+    # Join Conversation to filter by patient_id
+    stmt = (
+        select(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(Conversation.user_id == patient_id)
+        .order_by(Message.timestamp.desc())
+    )
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+    
+    def get_conf_level(score):
+        if not score: return None
+        if score >= 90: return "High"
+        if score >= 50: return "Medium"
+        return "Low"
+
+    return [
+        MessageLogItem(
+            id=m.id,
+            sender_type=m.sender_type,
+            content=m.content_redacted or m.content, # Use redacted for log safe view
+            timestamp=m.timestamp,
+            risk_level=m.risk_level.value if m.risk_level else None,
+            risk_reason=m.risk_reason,
+            confidence_score=m.confidence_score,
+            confidence_level=get_conf_level(m.confidence_score)
+        ) for m in messages
+    ]

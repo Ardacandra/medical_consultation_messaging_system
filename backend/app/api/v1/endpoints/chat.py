@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.db.database import get_db
+from app.db.database import get_db, SessionLocal
 from app.db.models import Message, Escalation, PatientProfile, Conversation, User
 from app.schemas import MessageCreate, MessageResponse, EscalationResponse, RiskLevel, PatientProfileResponse
 # from app.services.redaction import RedactionService # Deprecated in favor of core.privacy
@@ -18,6 +18,13 @@ router = APIRouter()
 risk_service = RiskAnalysisService()
 memory_service = MemoryService()
 chat_service = ChatService()
+
+async def run_background_memory_update(patient_id: int, content: str, message_id: int):
+    """
+    Wrapper to run memory extraction in background with its own DB session.
+    """
+    async with SessionLocal() as session:
+        await memory_service.extract_and_update_memory(session, patient_id, content, message_id)
 
 @router.post("/", response_model=MessageResponse | EscalationResponse)
 async def chat_endpoint(
@@ -76,7 +83,13 @@ async def chat_endpoint(
     )
     history = hist_result.scalars().all() # Reversed order usually
     
-    # Step B: Risk Analysis
+    # Step B: Memory Extraction (Background)
+    # Schedule it BEFORE risk check to ensure high-risk messages are also processed
+    patient_id = conversation.user_id if conversation.user_id else 1
+    # Use wrapper to ensure fresh session
+    background_tasks.add_task(run_background_memory_update, patient_id, content_redacted, user_msg.id)
+
+    # Step C: Risk Analysis
     risk_result = await risk_service.analyze_risk(history, content_redacted)
     
     # Update User Message with Risk Metadata
@@ -101,7 +114,6 @@ async def chat_endpoint(
         escalation = Escalation(
             conversation_id=msg_in.conversation_id,
             trigger_message_id=user_msg.id,
-            status="pending",
             triage_summary=risk_result.summary or f"{risk_result.risk_level} risk detected via automated analysis.",
             patient_profile_snapshot=profile_snapshot
         )
@@ -109,23 +121,50 @@ async def chat_endpoint(
         await db.commit()
         await db.refresh(escalation)
         
-        return EscalationResponse(
-            message=f"{risk_result.risk_level} risk detected. A nurse has been notified.",
-            escalation_id=escalation.id,
-            conversation_id=msg_in.conversation_id,
-            reason=risk_result.reason
-        )
+        # HIGH RISK: Early Return with Hardcoded System Message (Safety)
+        if risk_result.risk_level == RiskLevel.HIGH:
+            system_msg_content = "I'm really concerned about what you're sharing. I've flagged this for a nurse to review immediately - please hang tight, they will be with you right away."
+            
+            system_msg = Message(
+                conversation_id=msg_in.conversation_id,
+                sender_type="ai",
+                content=system_msg_content,
+                content_redacted=system_msg_content,
+                risk_level=risk_result.risk_level,
+                confidence_score=100, # System alerts are deterministic, so 100% confidence
+                timestamp=datetime.utcnow()
+            )
+            # Transient attributes for API response
+            system_msg.confidence = "High"
+            system_msg.reason = "System Rule: Automatic Escalation"
+            
+            db.add(system_msg)
+            await db.commit()
+            
+            return EscalationResponse(
+                message=system_msg_content,
+                escalation_id=escalation.id,
+                conversation_id=msg_in.conversation_id,
+                reason=risk_result.reason
+            )
         
-    # Step C: Memory Extraction (Background)
-    patient_id = conversation.user_id if conversation.user_id else 1
-    background_tasks.add_task(memory_service.extract_and_update_memory, db, patient_id, content_redacted, user_msg.id)
-
+        # MEDIUM RISK: Fall through to standard LLM generation (Step D)
+        # The Escalation record is created (Nurse notified), but the patient gets a natural AI response.
+        pass
+        
     # Step D: Chat Reply
     # Get Profile
     prof_result = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))
     profile = prof_result.scalars().first()
     
-    chat_response = await chat_service.generate_reply(content_redacted, profile)
+    # Serialize History for ChatService (needs simple dicts)
+    # history variable (Line 84) contains the last 5 messages
+    from fastapi.encoders import jsonable_encoder
+    history_serialized = [jsonable_encoder(m) for m in history]
+    # Reverse to chronological order for the LLM
+    history_serialized.reverse()
+
+    chat_response = await chat_service.generate_reply(content_redacted, profile, history=history_serialized)
     
     # Map confidence string to score for DB storage (backward compatibility)
     conf_map = {"High": 90, "Medium": 50, "Low": 10}

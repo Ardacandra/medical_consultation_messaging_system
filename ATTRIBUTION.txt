@@ -24,5 +24,13 @@ This project leverages several open-source libraries and artificial intelligence
 * **Tailwind CSS** (MIT License) - Utility-first CSS framework.
 * **TypeScript** (Apache License 2.0) - Typed superset of JavaScript.
 
+## 🎬 Video & Audio Production
+* **OBS Studio** (GPL-2.0 License) - Screen recording and streaming software.
+* **Kdenlive** (GPL-2.0+ License) - Video editing software.
+* **ElevenLabs** - AI voice synthesis and text-to-speech.
+  - Provider: ElevenLabs
+  - Website: https://elevenlabs.io
+  - License: [ElevenLabs Terms of Service](https://elevenlabs.io/terms)
+
 ## ⚖️ General Licenses
 Unless otherwise specified, the core logic and original code of this project are provided under the MIT License.

@@ -6,26 +6,32 @@ The Nightingale system is built as a **Secure, AI-Gated Healthcare Messaging Pla
 
 ```mermaid
 graph TD
-    P[Patient App - React] -->|HTTPS/JWT| Auth[FastAPI Auth/Redaction]
-    C[Clinician App - React] -->|HTTPS/JWT| Auth
+    P[Patient App - React] -->|HTTPS/JWT| API[FastAPI Chat Endpoint]
+    C[Clinician Dashboard - React] -->|HTTPS/JWT| CLIN[Clinician Endpoints]
     
-    subgraph Backend Services
-        Auth --> RS[Risk Analysis Service]
-        RS --> |Gated Response| CH[Chat Service]
-        CH --> LLM[LLM Factory - Gemini]
-        Auth --> MS[Memory Service]
+    subgraph Chat Request Flow
+        API -->|1. Redact PII| RED[Privacy Layer]
+        RED -->|2. Save Message| DB[(PostgreSQL)]
+        RED -->|3. Analyze| RS[Risk Analysis Service]
+        
+        RS -->|HIGH/MEDIUM Risk| ESC{Create Escalation}
+        RS -->|LOW Risk| CH[Chat Service]
+        
+        ESC -->|Triage Ticket| DB
+        ESC -->|Safety Message| RETURN1[Return to Patient]
+        
+        CH -->|Generate Reply| LLM[LLM Factory - Gemini]
+        LLM -->|AI Response| RETURN2[Return to Patient]
+        
+        RED -.->|Background Task| MS[Memory Service]
+        MS -.->|Update Profile| DB
     end
     
-    subgraph Database Layer
-        DB[(PostgreSQL)]
-        Auth --> DB
-        MS --> DB
+    subgraph Clinician Loop
+        CLIN -->|View Queue| DB
+        CLIN -->|Reply to Escalation| DB
+        DB -.->|Verified Message| CH
     end
-    
-    CH -.->|Escalation Event| Triage[Clinician Triage Queue]
-    MS -.->|Mutation| Profile[Patient Living Profile]
-    C -.->|Clinician Reply| CH
-    CH -.->|Verified Message| LLM
 ```
 
 ### Key Architectural Pillars:
@@ -60,17 +66,18 @@ erDiagram
         datetime created_at
     }
     
-    MESSAGE ||--o{ CITATION : supports
     MESSAGE {
         int id
         int conversation_id
         string sender_type "patient|ai|clinician"
-        string content_redacted
-        enum risk_level "LOW|MED|HIGH"
+        string content "Encrypted at rest"
+        string content_redacted "Safe for logs"
+        enum risk_level "LOW|MEDIUM|HIGH"
         string risk_reason
         int confidence_score
+        string audio_transcript_id "Voice provider ID"
+        string audio_url "S3/Blob URL"
         datetime timestamp
-        string audio_url "Voice Support"
     }
     
     MESSAGE ||--o{ ESCALATION : triggers
@@ -87,9 +94,10 @@ erDiagram
     PATIENT_PROFILE {
         int id
         int patient_id
-        json medications "[{value, status, source_id}]"
-        json symptoms
-        json allergies
+        json medications "[{value, status, provenance_pointer, updated_at, stopped_at}]"
+        json symptoms "[{value, status, provenance_pointer, updated_at, stopped_at}]"
+        json allergies "[{value, status, provenance_pointer, updated_at}]"
+        json chief_complaint "[{value, status, provenance_pointer, updated_at}]"
         datetime last_updated
     }
 ```

@@ -4,10 +4,33 @@
 
 The Nightingale system is built as a **Secure, AI-Gated Healthcare Messaging Platform**. It employs a "Safety-First" architecture where every interaction is validated for medical risk before reaching the patient.
 
-![Architecture Diagram](architecture_diagram.png)
+```mermaid
+graph TD
+    P[Patient App - React] -->|HTTPS/JWT| Auth[FastAPI Auth/Redaction]
+    C[Clinician App - React] -->|HTTPS/JWT| Auth
+    
+    subgraph Backend Services
+        Auth --> RS[Risk Analysis Service]
+        RS --> |Gated Response| CH[Chat Service]
+        CH --> LLM[LLM Factory - Gemini]
+        Auth --> MS[Memory Service]
+    end
+    
+    subgraph Database Layer
+        DB[(PostgreSQL)]
+        Auth --> DB
+        MS --> DB
+    end
+    
+    CH -.->|Escalation Event| Triage[Clinician Triage Queue]
+    MS -.->|Mutation| Profile[Patient Living Profile]
+    C -.->|Clinician Reply| CH
+    CH -.->|Verified Message| LLM
+```
 
 ### Key Architectural Pillars:
 - **Risk-Gated Pipeline**: Every incoming message passes through `RiskAnalysisService` before any AI advice is generated. If "Med" or "High" risk is detected, the AI is short-circuited.
+- **Privacy Layer**: Redaction occurs before transmission to LLMs, ensuring NRICs or phone numbers are never logged or processed by external models.
 - **Background Extraction**: Memory mutation (extracting facts like medications) happens asynchronously via background tasks to ensure sub-second response latency for the patient.
 - **Clinician-in-the-Loop**: The "Escalation Loop" ensures that AI never operates in a vacuum for critical cases.
 
@@ -17,7 +40,59 @@ The Nightingale system is built as a **Secure, AI-Gated Healthcare Messaging Pla
 
 The schema is designed for **Medical Provenance**. Every extracted fact must point back to the specific message that generated it.
 
-![Schema Diagram](schema_diagram.png)
+```mermaid
+erDiagram
+    USER ||--o{ CONVERSATION : owns
+    USER {
+        int id
+        string email
+        string role "patient | clinician"
+        string hashed_password
+        boolean is_active
+        string clinic_id "RBAC Scope"
+    }
+    
+    CONVERSATION ||--o{ MESSAGE : contains
+    CONVERSATION {
+        int id
+        int user_id
+        string title
+        datetime created_at
+    }
+    
+    MESSAGE ||--o{ CITATION : supports
+    MESSAGE {
+        int id
+        int conversation_id
+        string sender_type "patient|ai|clinician"
+        string content_redacted
+        enum risk_level "LOW|MED|HIGH"
+        string risk_reason
+        int confidence_score
+        datetime timestamp
+        string audio_url "Voice Support"
+    }
+    
+    MESSAGE ||--o{ ESCALATION : triggers
+    ESCALATION {
+        int id
+        int conversation_id
+        int trigger_message_id
+        string triage_summary
+        string status "pending | resolved"
+        json patient_profile_snapshot
+    }
+    
+    USER ||--o{ PATIENT_PROFILE : has
+    PATIENT_PROFILE {
+        int id
+        int patient_id
+        json medications "[{value, status, source_id}]"
+        json symptoms
+        json allergies
+        datetime last_updated
+    }
+```
 
 ---
 
